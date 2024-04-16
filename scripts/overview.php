@@ -7,6 +7,7 @@ session_set_cookie_params(7200);
 session_start();
 $myDate = date('Y-m-d');
 $chart = "Combo-$myDate.png";
+$sparklines = "Sparklines-$myDate.png";
 
 $db = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_CREATE | SQLITE3_OPEN_READWRITE);
 if($db == False) {
@@ -77,6 +78,13 @@ if(isset($_GET['fetch_chart_string']) && $_GET['fetch_chart_string'] == "true") 
   $myDate = date('Y-m-d');
   $chart = "Combo-$myDate.png";
   echo $chart;
+  die();
+}
+
+if(isset($_GET['fetch_sparklines_string']) && $_GET['fetch_sparklines_string'] == "true") {
+  $myDate = date('Y-m-d');
+  $sparklines = "Sparklines-$myDate.png";
+  echo $sparklines;
   die();
 }
 
@@ -352,6 +360,9 @@ if($dividedrefresh < 1) {
 $time = time();
 if (file_exists('./Charts/'.$chart)) {
   echo "<img id='chart' src=\"/Charts/$chart?nocache=$time\">";
+}
+if (file_exists('./Charts/'.$sparklines)) {
+  echo "<img id='chart' src=\"/Charts/$sparklines?nocache=$time\">";
 } 
 ?>
 </div>

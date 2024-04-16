@@ -69,7 +69,7 @@ top_n_today = get_top_n_today(df)
 
 
 
-
+# Plot daily heatmap plot
 
 # Set up plot axes and titles
 f, axs = plt.subplots(1, 2, figsize=(12, 8), gridspec_kw=dict(width_ratios=[1, 6]), facecolor='#77C487')
@@ -143,6 +143,74 @@ plt.suptitle("Top 25 Last Updated: " + str(now.strftime("%Y-%m-%d %H:%M")))
 
 # Save combined plot
 savename = userDir + '/BirdSongs/Extracted/Charts/Combo-' + str(now.strftime("%Y-%m-%d")) + '.png'
+# savename = userDir + '/Desktop/Combo-' + str(now.strftime("%Y-%m-%d")) + '.png'
+plt.savefig(savename)
+plt.show()
+plt.close()
+
+
+# Plot bird sparklines
+# Get the top 10 most common birds
+top_birds = top_n_today['Com_Name'].value_counts().nlargest(10).index
+
+# Filter the DataFrame to include only the top 10 most common birds
+top_df = top_n_today[top_n_today['Com_Name'].isin(top_birds)]
+
+# Create a DataFrame with all 15-minute intervals for the day
+now_rounded_up = now + timedelta(hours=1)
+now_rounded_up = now_rounded_up.replace(minute=0, second=0, microsecond=0)
+one_day_ago = now_rounded_up - timedelta(days=1)
+all_intervals = pd.date_range(start=one_day_ago, end=now_rounded_up, freq='15T')
+
+# Group by 'Com_Name' and 15-minute intervals, then count the occurrences
+top_df_grouped = top_df.groupby(['Com_Name', pd.Grouper(key='Timestamp', freq='15Min')]).size().reset_index(name='Count')
+
+# Create an empty DataFrame to hold the reindexed data
+reindexed_data = pd.DataFrame()
+
+# Go through each bird in the top birds and reindex
+for bird in top_birds:
+    bird_df = top_df_grouped[top_df_grouped['Com_Name'] == bird]
+    bird_df.set_index('Timestamp', inplace=True)
+    bird_df = bird_df.reindex(all_intervals, method=None).rename_axis('Timestamp').reset_index()
+    bird_df['Com_Name'] = bird  # Add the bird name back in after reindexing
+    bird_df.fillna(0, inplace=True) # impute missing with 0s
+    reindexed_data = pd.concat([reindexed_data, bird_df], axis=0)
+
+# Create the subplot grid - one plot for each bird
+fig, axes = plt.subplots(nrows=len(top_birds), ncols=1, sharex=True, figsize=(10, 10))
+
+# Plot the data
+for ax, bird in zip(axes, top_birds):
+    # Filter the DataFrame for the current bird
+    bird_df = reindexed_data[reindexed_data['Com_Name'] == bird]
+
+    # Plot the sparkline for this bird
+    sns.lineplot(ax=ax, data=bird_df, x='Timestamp', y='Count', color='blue')
+
+    # Remove y-axis label and ticks for sparkline appearance
+    ax.yaxis.set_visible(False)
+
+    # set x-axis labels
+    ax.tick_params(axis='x', which='both', length=6)
+    ax.set_xticklabels([])  # Set empty labels for x ticks
+
+    # Set the bird name as the title for each subplot
+    ax.set_title(bird, loc='left', ha='right', x=0.0, y=0.25)
+
+# Remove x-axis labels and ticks except for the bottom one
+for ax in axes[:-1]:
+    ax.set_xticklabels([])  # Set empty labels for x ticks
+
+# Format the x-axis to show the time
+plt.gcf().autofmt_xdate()  # Rotate date labels to prevent overlap
+plt.gca().xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%H:%M'))
+
+# Adjust layout so titles are visible and plots are close together
+plt.tight_layout()
+
+# Save combined plot
+savename = userDir + '/BirdSongs/Extracted/Charts/Sparklines-' + str(now.strftime("%Y-%m-%d")) + '.png'
 # savename = userDir + '/Desktop/Combo-' + str(now.strftime("%Y-%m-%d")) + '.png'
 plt.savefig(savename)
 plt.show()
