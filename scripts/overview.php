@@ -383,7 +383,7 @@ function loadDetectionIfNewExists(previous_detection_identifier=undefined) {
       loadLeftChart();
       loadFiveMostRecentDetections();
       refreshTopTen();
-      loadRecentDetections(10);
+      loadRecentDetections(25);
     }
   }
   xhttp.open("GET", "overview.php?ajax_detections=true&previous_detection_identifier="+previous_detection_identifier, true);

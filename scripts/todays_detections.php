@@ -180,14 +180,30 @@ function relativeTime($ts)
 
 if (isset($_GET['recent_detections']) && is_numeric($_GET['limit'])) {
   $limit = intval($_GET['limit']);
-  $query = 'SELECT Com_Name, Time, Date || \' \' || Time FROM detections ORDER BY 3 DESC LIMIT ?';
+  $query = "with today as (
+              select
+                *,
+                Date || ' ' || Time as timestamp
+              from detections
+              where
+                Date = strftime('%Y-%m-%d', 'now', 'localtime')
+            )
+            select
+              Com_Name,
+              count(*) as detection_count,
+              min(timestamp) as first_detection,
+              max(timestamp) as last_detection
+            from today
+            group by 1
+            order by 4 desc
+            limit ?";
   $stmt = $db->prepare($query);
   if ($stmt) {
       $stmt->bindParam(1, $limit, SQLITE3_INTEGER);
       $result = $stmt->execute();
       echo "<table>";
       while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-          echo "<tr><td>{$row['Time']}</td><td>{$row['Com_Name']}</td></tr>";
+          echo "<tr><td>{$row['Com_Name']}</td><td>{$row['detection_count']}</td><td>{$row['first_detection']}</td><td>{$row['last_detection']}</td></tr>";
       }
       echo "</table>";
   } else {
