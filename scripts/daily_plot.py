@@ -195,8 +195,12 @@ for ax, bird in zip(axes, top_birds):
     ax.tick_params(axis='x', which='both', length=6)
     ax.set_xticklabels([])  # Set empty labels for x ticks
 
+    # Create a wrapper object for wrapping text. `width` is the maximum length of the lines.
+    wrapper = textwrap.TextWrapper(width=10)
+    wrapped_label = wrapper.fill(text=bird)
+
     # Set the bird name as the title for each subplot
-    ax.set_title(bird, loc='left', ha='right', x=0.0, y=0.25, fontsize=6)
+    ax.set_title(wrapped_label, loc='left', ha='right', x=0.0, y=0.25, fontsize=8)
 
 # Remove x-axis labels and ticks except for the bottom one
 for ax in axes[:-1]:
