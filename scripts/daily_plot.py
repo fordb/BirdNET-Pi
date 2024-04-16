@@ -150,8 +150,8 @@ plt.close()
 
 
 # Plot bird sparklines
-# Get the top 10 most common birds
-top_birds = top_n_today['Com_Name'].value_counts().nlargest(10).index
+# Get the most common birds
+top_birds = top_n_today['Com_Name'].value_counts().nlargest(readings).index
 
 # Filter the DataFrame to include only the top 10 most common birds
 top_df = top_n_today[top_n_today['Com_Name'].isin(top_birds)]
@@ -178,7 +178,7 @@ for bird in top_birds:
     reindexed_data = pd.concat([reindexed_data, bird_df], axis=0)
 
 # Create the subplot grid - one plot for each bird
-fig, axes = plt.subplots(nrows=len(top_birds), ncols=1, sharex=True, figsize=(10, 10))
+fig, axes = plt.subplots(nrows=len(top_birds), ncols=1, sharex=True, figsize=(8, 20))
 
 # Plot the data
 for ax, bird in zip(axes, top_birds):
@@ -196,7 +196,7 @@ for ax, bird in zip(axes, top_birds):
     ax.set_xticklabels([])  # Set empty labels for x ticks
 
     # Set the bird name as the title for each subplot
-    ax.set_title(bird, loc='left', ha='right', x=0.0, y=0.25, fontsize=7)
+    ax.set_title(bird, loc='left', ha='right', x=0.0, y=0.25, fontsize=6)
 
 # Remove x-axis labels and ticks except for the bottom one
 for ax in axes[:-1]:
