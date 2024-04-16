@@ -202,6 +202,7 @@ if (isset($_GET['recent_detections']) && is_numeric($_GET['limit'])) {
       $stmt->bindParam(1, $limit, SQLITE3_INTEGER);
       $result = $stmt->execute();
       echo "<table>";
+      echo "<tr><th>Common Name</th><th>Detection Count</th><th>First Detection</th><th>Last Detection</th></tr>";
       while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
           echo "<tr><td>{$row['Com_Name']}</td><td>{$row['detection_count']}</td><td>{$row['first_detection']}</td><td>{$row['last_detection']}</td></tr>";
       }
