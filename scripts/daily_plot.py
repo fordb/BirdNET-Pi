@@ -196,7 +196,7 @@ for ax, bird in zip(axes, top_birds):
     ax.set_xticklabels([])  # Set empty labels for x ticks
 
     # Set the bird name as the title for each subplot
-    ax.set_title(bird, loc='left', ha='right', x=0.0, y=0.25)
+    ax.set_title(bird, loc='left', ha='right', x=0.0, y=0.25, fontsize=7)
 
 # Remove x-axis labels and ticks except for the bottom one
 for ax in axes[:-1]:
