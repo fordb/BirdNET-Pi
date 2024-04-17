@@ -18,9 +18,9 @@ install_depends() {
   apt -qqq update && apt -qqy upgrade
   echo "icecast2 icecast2/icecast-setup boolean false" | debconf-set-selections
   apt install -qqy caddy ftpd sqlite3 php-sqlite3 alsa-utils \
-    pulseaudio avahi-utils sox libsox-fmt-mp3 php php-fpm php-curl php-xml \
-    php-zip icecast2 swig ffmpeg wget unzip curl cmake make bc libjpeg-dev \
-    zlib1g-dev python3-dev python3-pip python3-venv lsof net-tools
+    pulseaudio avahi-utils sox libsox-fmt-mp3 php-fpm php-curl php-xml \
+    php-zip php icecast2 swig ffmpeg wget unzip curl cmake make bc libjpeg-dev \
+    zlib1g-dev python3-dev python3-pip python3-venv lsof net-tools gcc python3-dev inotify-tools
 }
 
 
@@ -43,55 +43,17 @@ install_birdnet_analysis() {
   cat << EOF > $HOME/BirdNET-Pi/templates/birdnet_analysis.service
 [Unit]
 Description=BirdNET Analysis
-After=birdnet_server.service
-Requires=birdnet_server.service
 [Service]
-RuntimeMaxSec=900
 Restart=always
 Type=simple
 RestartSec=2
 User=${USER}
-ExecStart=/usr/local/bin/birdnet_analysis.sh
+ExecStart=$PYTHON_VIRTUAL_ENV /usr/local/bin/birdnet_analysis.py
 [Install]
 WantedBy=multi-user.target
 EOF
   ln -sf $HOME/BirdNET-Pi/templates/birdnet_analysis.service /usr/lib/systemd/system
   systemctl enable birdnet_analysis.service
-}
-
-install_birdnet_server() {
-  cat << EOF > $HOME/BirdNET-Pi/templates/birdnet_server.service
-[Unit]
-Description=BirdNET Analysis Server
-Before=birdnet_analysis.service
-[Service]
-Restart=always
-Type=simple
-RestartSec=10
-User=${USER}
-ExecStart=$PYTHON_VIRTUAL_ENV /usr/local/bin/server.py
-[Install]
-WantedBy=multi-user.target
-EOF
-  ln -sf $HOME/BirdNET-Pi/templates/birdnet_server.service /usr/lib/systemd/system
-  systemctl enable birdnet_server.service
-}
-
-install_extraction_service() {
-  cat << EOF > $HOME/BirdNET-Pi/templates/extraction.service
-[Unit]
-Description=BirdNET BirdSound Extraction
-[Service]
-Restart=on-failure
-RestartSec=3
-Type=simple
-User=${USER}
-ExecStart=/usr/bin/env bash -c 'while true;do extract_new_birdsounds.sh;sleep 3;done'
-[Install]
-WantedBy=multi-user.target
-EOF
-  ln -sf $HOME/BirdNET-Pi/templates/extraction.service /usr/lib/systemd/system
-  systemctl enable extraction.service
 }
 
 create_necessary_dirs() {
@@ -100,6 +62,8 @@ create_necessary_dirs() {
   [ -d ${EXTRACTED}/By_Date ] || sudo -u ${USER} mkdir -p ${EXTRACTED}/By_Date
   [ -d ${EXTRACTED}/Charts ] || sudo -u ${USER} mkdir -p ${EXTRACTED}/Charts
   [ -d ${PROCESSED} ] || sudo -u ${USER} mkdir -p ${PROCESSED}
+  [ -d $RECS_DIR/StreamData ] || sudo -u ${USER} mkdir -p $RECS_DIR/StreamData
+  [ -L ${EXTRACTED}/spectrogram.png ] || sudo -u ${USER} ln -sf ${RECS_DIR}/StreamData/spectrogram.png ${EXTRACTED}/spectrogram.png
 
   sudo -u ${USER} ln -fs $my_dir/exclude_species_list.txt $my_dir/scripts
   sudo -u ${USER} ln -fs $my_dir/include_species_list.txt $my_dir/scripts
@@ -137,6 +101,9 @@ set_login() {
   if ! [ -d /etc/lightdm ];then
     systemctl set-default multi-user.target
     ln -fs /lib/systemd/system/getty@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
+    if ! [ -d /etc/systemd/system/getty@tty1.service.d ];then
+      mkdir /etc/systemd/system/getty@tty1.service.d
+    fi
     cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
 [Service]
 ExecStart=
@@ -218,7 +185,7 @@ http:// ${BIRDNETPI_URL} {
     birdnet ${HASHWORD}
   }
   reverse_proxy /stream localhost:8000
-  php_fastcgi unix//run/php/php7.4-fpm.sock
+  php_fastcgi unix//run/php/php-fpm.sock
   reverse_proxy /log* localhost:8080
   reverse_proxy /stats* localhost:8501
   reverse_proxy /terminal* localhost:8888
@@ -236,7 +203,7 @@ http:// ${BIRDNETPI_URL} {
     file_server browse
   }
   reverse_proxy /stream localhost:8000
-  php_fastcgi unix//run/php/php7.4-fpm.sock
+  php_fastcgi unix//run/php/php-fpm.sock
   reverse_proxy /log* localhost:8080
   reverse_proxy /stats* localhost:8501
   reverse_proxy /terminal* localhost:8888
@@ -247,6 +214,7 @@ EOF
   systemctl enable caddy
   usermod -aG $USER caddy
   usermod -aG video caddy
+  chmod g+r+x $HOME
 }
 
 install_avahi_aliases() {
@@ -265,6 +233,9 @@ WantedBy=multi-user.target
 EOF
   ln -sf $HOME/BirdNET-Pi/templates/avahi-alias@.service /usr/lib/systemd/system
   systemctl enable avahi-alias@"$(hostname)".local.service
+  # symbolic link does not work here, so just copy
+  cp -f $HOME/BirdNET-Pi/templates/http.service /etc/avahi/services/
+  systemctl restart avahi-daemon.service
 }
 
 install_birdnet_stats_service() {
@@ -312,7 +283,7 @@ Restart=always
 RestartSec=120
 Type=simple
 User=$USER
-ExecStart=$PYTHON_VIRTUAL_ENV /usr/local/bin/daily_plot.py
+ExecStart=$PYTHON_VIRTUAL_ENV /usr/local/bin/daily_plot.py --daemon --sleep 2
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -334,7 +305,7 @@ RestartSec=3
 Type=simple
 User=${USER}
 Environment=TERM=xterm-256color
-ExecStart=/usr/local/bin/gotty --address localhost -p 8080 -P log --title-format "BirdNET-Pi Log" birdnet_log.sh
+ExecStart=/usr/local/bin/gotty --address localhost -p 8080 --path log --title-format "BirdNET-Pi Log" birdnet_log.sh
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -348,7 +319,7 @@ Restart=on-failure
 RestartSec=3
 Type=simple
 Environment=TERM=xterm-256color
-ExecStart=/usr/local/bin/gotty --address localhost -w -p 8888 -P terminal --title-format "BirdNET-Pi Terminal" login
+ExecStart=/usr/local/bin/gotty --address localhost -w -p 8888 --path terminal --title-format "BirdNET-Pi Terminal" login
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -359,7 +330,7 @@ EOF
 configure_caddy_php() {
   echo "Configuring PHP for Caddy"
   sed -i 's/www-data/caddy/g' /etc/php/*/fpm/pool.d/www.conf
-  systemctl restart php7\*-fpm.service
+  systemctl restart php\*-fpm.service
   echo "Adding Caddy sudoers rule"
   cat << EOF > /etc/sudoers.d/010_caddy-nopasswd
 caddy ALL=(ALL) NOPASSWD: ALL
@@ -381,7 +352,7 @@ config_icecast() {
   for i in "${passwords[@]}";do
   sed -i "s/<${i}password>.*<\/${i}password>/<${i}password>${ICE_PWD}<\/${i}password>/g" /etc/icecast2/icecast.xml
   done
-  sed -i 's|<!-- <bind-address>.*|<bind-address>127.0.0.1</bind-address>|;s|<!-- <shoutcast-mount>.*|<shoutcast-mount>/stream</shoutcast-mount>|'
+  sed -i 's|<!-- <bind-address>.*|<bind-address>127.0.0.1</bind-address>|;s|<!-- <shoutcast-mount>.*|<shoutcast-mount>/stream</shoutcast-mount>|' /etc/icecast2/icecast.xml
 
   systemctl enable icecast2.service
 }
@@ -437,16 +408,15 @@ install_services() {
   install_Caddyfile
   install_avahi_aliases
   install_birdnet_analysis
-  install_birdnet_server
   install_birdnet_stats_service
   install_recording_service
   install_custom_recording_service # But does not enable
-  install_extraction_service
   install_spectrogram_service
   install_chart_viewer_service
   install_gotty_logs
   install_phpsysinfo
   install_livestream_service
+  install_birdnet_mount
   install_cleanup_cron
   install_weekly_cron
   increase_caddy_timeout
@@ -460,6 +430,7 @@ install_services() {
 
 if [ -f ${config_file} ];then
   source ${config_file}
+  source install_helpers.sh
   install_services
   chown_things
 else

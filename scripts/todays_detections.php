@@ -10,81 +10,50 @@ session_set_cookie_params(7200);
 session_start();
 error_reporting(E_ERROR);
 ini_set('display_errors',1);
+require_once 'scripts/common.php';
+$home = get_home();
+$config = get_config();
+$site_name = get_sitename();
 
-if (file_exists('./scripts/thisrun.txt')) {
-    $config = parse_ini_file('./scripts/thisrun.txt');
-  } elseif (file_exists('./scripts/firstrun.ini')) {
-  $config = parse_ini_file('./scripts/firstrun.ini');
-  } 
-
-  if($config["SITE_NAME"] == "") {
-    $site_name = "BirdNET-Pi";
-  } else {
-    $site_name = $config['SITE_NAME'];
-  }
-
-  if($kiosk == true) {
+if(isset($kiosk) && $kiosk == true) {
     echo "<div style='margin-top:20px' class=\"centered\"><h1><a><img class=\"topimage\" src=\"images/bnp.png\"></a></h1></div>
 </div><div class=\"centered\"><h3>$site_name</h3></div><hr>";
-  }
-
-$db = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_CREATE | SQLITE3_OPEN_READWRITE);
-if($db == False){
-  echo "Database is busy";
-  header("refresh: 0;");
+} else {
+  $kiosk = false;
 }
+
+$db = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_READONLY);
+$db->busyTimeout(1000);
 
 $statement1 = $db->prepare('SELECT COUNT(*) FROM detections');
-if($statement1 == False){
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement1);
 $result1 = $statement1->execute();
 $totalcount = $result1->fetchArray(SQLITE3_ASSOC);
 
 $statement2 = $db->prepare('SELECT COUNT(*) FROM detections WHERE Date == DATE(\'now\', \'localtime\')');
-if($statement2 == False){
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement2);
 $result2 = $statement2->execute();
 $todaycount = $result2->fetchArray(SQLITE3_ASSOC);
 
 $statement3 = $db->prepare('SELECT COUNT(*) FROM detections WHERE Date == Date(\'now\', \'localtime\') AND TIME >= TIME(\'now\', \'localtime\', \'-1 hour\')');
-if($statement3 == False){
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement3);
 $result3 = $statement3->execute();
 $hourcount = $result3->fetchArray(SQLITE3_ASSOC);
 
 $statement4 = $db->prepare('SELECT Com_Name, Sci_Name, Time, Confidence FROM detections LIMIT 1');
-if($statement4 == False){
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement4);
 $result4 = $statement4->execute();
 $mostrecent = $result4->fetchArray(SQLITE3_ASSOC);
 
 $statement5 = $db->prepare('SELECT COUNT(DISTINCT(Com_Name)) FROM detections WHERE Date == Date(\'now\', \'localtime\')');
-if($statement5 == False){
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement5);
 $result5 = $statement5->execute();
 $todayspeciestally = $result5->fetchArray(SQLITE3_ASSOC);
 
 $statement6 = $db->prepare('SELECT COUNT(DISTINCT(Com_Name)) FROM detections');
-if($statement6 == False){
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement6);
 $result6 = $statement6->execute();
 $totalspeciestally = $result6->fetchArray(SQLITE3_ASSOC);
-
-$user = shell_exec("awk -F: '/1000/{print $1}' /etc/passwd");
-$home = shell_exec("awk -F: '/1000/{print $6}' /etc/passwd");
-$home = trim($home);
 
 if(isset($_GET['comname'])) {
  $birdName = $_GET['comname'];
@@ -229,20 +198,17 @@ if(isset($_GET['ajax_detections']) && $_GET['ajax_detections'] == "true"  ) {
     $searchquery = "";
   }
   if(isset($_GET['display_limit']) && is_numeric($_GET['display_limit'])){
-    $statement0 = $db->prepare('SELECT Time, Com_Name, Sci_Name, Confidence, File_Name FROM detections WHERE Date == Date(\'now\', \'localtime\') '.$searchquery.' ORDER BY Time DESC LIMIT '.(intval($_GET['display_limit'])-40).',40');
+    $statement0 = $db->prepare('SELECT Date, Time, Com_Name, Sci_Name, Confidence, File_Name FROM detections WHERE Date == Date(\'now\', \'localtime\') '.$searchquery.' ORDER BY Time DESC LIMIT '.(intval($_GET['display_limit'])-40).',40');
   } else {
     // legacy mode
     if(isset($_GET['hard_limit']) && is_numeric($_GET['hard_limit'])) {
-      $statement0 = $db->prepare('SELECT Time, Com_Name, Sci_Name, Confidence, File_Name FROM detections WHERE Date == Date(\'now\', \'localtime\') '.$searchquery.' ORDER BY Time DESC LIMIT '.$_GET['hard_limit']);
+      $statement0 = $db->prepare('SELECT Date, Time, Com_Name, Sci_Name, Confidence, File_Name FROM detections WHERE Date == Date(\'now\', \'localtime\') '.$searchquery.' ORDER BY Time DESC LIMIT '.$_GET['hard_limit']);
     } else {
-      $statement0 = $db->prepare('SELECT Time, Com_Name, Sci_Name, Confidence, File_Name FROM detections WHERE Date == Date(\'now\', \'localtime\') '.$searchquery.' ORDER BY Time DESC');
+      $statement0 = $db->prepare('SELECT Date, Time, Com_Name, Sci_Name, Confidence, File_Name FROM detections WHERE Date == Date(\'now\', \'localtime\') '.$searchquery.' ORDER BY Time DESC');
     }
     
   }
-  if($statement0 == False){
-    echo "Database is busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement0);
   $result0 = $statement0->execute();
 
   ?> <table>
@@ -254,13 +220,6 @@ if(isset($_GET['ajax_detections']) && $_GET['ajax_detections'] == "true"  ) {
   $iterations = 0;
   $lines=null;
   $licenses_urls = array();
-
-  if (file_exists('./scripts/thisrun.txt')) {
-    $config = parse_ini_file('./scripts/thisrun.txt');
-  } elseif (file_exists('./scripts/firstrun.ini')) {
-  $config = parse_ini_file('./scripts/firstrun.ini');
-  } 
-
 
   while($todaytable=$result0->fetchArray(SQLITE3_ASSOC))
   {
@@ -319,7 +278,12 @@ if(isset($_GET['ajax_detections']) && $_GET['ajax_detections'] == "true"  ) {
         }
       }
       // Read the blacklisted image ids from the file into an array
-      $blacklisted_ids = array_map('trim', file($home."/BirdNET-Pi/scripts/blacklisted_images.txt"));
+      $blacklisted_file = file($home."/BirdNET-Pi/scripts/blacklisted_images.txt");
+      if ($blacklisted_file) {
+        $blacklisted_ids = array_map('trim', $blacklisted_file);
+      } else {
+        $blacklisted_ids = [];
+      }
 
       // Make the API call
       $flickrjson = json_decode(file_get_contents("https://www.flickr.com/services/rest/?method=flickr.photos.search&api_key=".$config["FLICKR_API_KEY"]."&text=".str_replace(" ", "%20", $engname).$comnameprefix."&sort=relevance".$args."&per_page=5&media=photos&format=json&nojsoncallback=1"), true)["photos"]["photo"];
@@ -398,7 +362,7 @@ if(isset($_GET['ajax_detections']) && $_GET['ajax_detections'] == "true"  ) {
           </td>
           <td><b>Confidence:</b> <?php echo round((float)round($todaytable['Confidence'],2) * 100 ) . '%';?><br></td>
           <?php if(!isset($_GET['mobile'])) { ?>
-              <td style="min-width:180px"><audio controls preload="none" title="<?php echo $filename;?>"><source preload="none" src="<?php echo $filename;?>"></audio></td>
+              <td style="min-width:180px"><audio controls preload="none" src="<?php echo $filename;?>"></audio></td>
           <?php } ?>
         <?php } ?>
   <?php }?>
@@ -448,18 +412,16 @@ if(isset($_GET['today_stats'])) {
 die(); 
 }
 
-?>
-
-<!DOCTYPE html>
+if (get_included_files()[0] === __FILE__) {
+  echo '<!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BirdNET-Pi DB</title>
-  <style>
-</style>
-</head>
+</head>';
+}
+?>
 <div class="viewdb">
   <dialog style="margin-top: 5px;max-height: 95vh;
   overflow-y: auto;overscroll-behavior:contain" id="attribution-dialog">
@@ -531,7 +493,7 @@ die();
   }
   </script>  
     <h3>Number of Detections</h3>
-    <div id="todaystats"><table>
+    <div id="todaystats" class="overview"><form action="views.php" method="GET"><table>
       <tr>
   <th>Total</th>
   <th>Today</th>
@@ -541,18 +503,12 @@ die();
       </tr>
       <tr>
       <td><?php echo $totalcount['COUNT(*)'];?></td>
-      <form action="" method="GET">
       <td><input type="hidden" name="view" value="Recordings"><?php if($kiosk == false){?><button type="submit" name="date" value="<?php echo date('Y-m-d');?>"><?php echo $todaycount['COUNT(*)'];?></button><?php } else { echo $todaycount['COUNT(*)']; }?></td>
-      </form>
       <td><?php echo $hourcount['COUNT(*)'];?></td>
-      <form action="" method="GET">
       <td><?php if($kiosk == false){?><button type="submit" name="view" value="Species Stats"><?php echo $totalspeciestally['COUNT(DISTINCT(Com_Name))'];?></button><?php }else { echo $totalspeciestally['COUNT(DISTINCT(Com_Name))']; }?></td>
-      </form>
-      <form action="" method="GET">
       <td><input type="hidden" name="view" value="Recordings"><?php if($kiosk == false){?><button type="submit" name="date" value="<?php echo date('Y-m-d');?>"><?php echo $todayspeciestally['COUNT(DISTINCT(Com_Name))'];?></button><?php } else { echo $todayspeciestally['COUNT(DISTINCT(Com_Name))']; }?></td>
-      </form>
       </tr>
-    </table></div>
+    </table></form></div>
 
 
     <h3>Today's Detections <?php if($kiosk == false) { ?>— <input autocomplete="off" size="11" type="text" placeholder="Search..." id="searchterm" name="searchterm"><?php } ?></h3>
@@ -702,6 +658,7 @@ function generateMiniGraph(elem, comname) {
       // Create a div element for the chart window
       if (typeof(window.chartWindow) != 'undefined') {
         document.body.removeChild(window.chartWindow);
+        window.chartWindow = undefined;
       }
       var chartWindow = document.createElement('div');
       chartWindow.className = "chartdiv"
@@ -811,6 +768,7 @@ function generateMiniGraph(elem, comname) {
       closeButton.style.right = '5px';
       closeButton.addEventListener('click', function() {
         document.body.removeChild(chartWindow);
+        window.chartWindow = undefined;
       });
       chartWindow.appendChild(closeButton);
       window.chartWindow = chartWindow;
@@ -827,6 +785,7 @@ window.addEventListener('scroll', function() {
   // Loop through all chart elements and remove them
   charts.forEach(function(chart) {
     chart.parentNode.removeChild(chart);
+    window.chartWindow = undefined;
   });
 });
 

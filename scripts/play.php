@@ -6,130 +6,68 @@ $_POST  = filter_input_array(INPUT_POST, FILTER_SANITIZE_STRING);
 
 error_reporting(E_ERROR);
 ini_set('display_errors',1);
+require_once 'scripts/common.php';
+$home = get_home();
+$config = get_config();
 
-$db = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_CREATE | SQLITE3_OPEN_READWRITE);
-if($db == False){
-  echo "Database is busy";
-  header("refresh: 0;");
-}
-
-if (file_exists('./scripts/thisrun.txt')) {
-  $config = parse_ini_file('./scripts/thisrun.txt');
-} elseif (file_exists('firstrun.ini')) {
-  $config = parse_ini_file('firstrun.ini');
-}
-
-$user = shell_exec("awk -F: '/1000/{print $1}' /etc/passwd");
-$home = shell_exec("awk -F: '/1000/{print $6}' /etc/passwd");
-$home = trim($home);
-
+$db = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_READONLY);
+$db->busyTimeout(1000);
 
 if(isset($_GET['deletefile'])) {
-  if(isset($_SERVER['PHP_AUTH_USER'])) {
-    $submittedpwd = $_SERVER['PHP_AUTH_PW'];
-    $submitteduser = $_SERVER['PHP_AUTH_USER'];
-    if($submittedpwd == $config['CADDY_PWD'] && $submitteduser == 'birdnet'){
-      $statement1 = $db->prepare('DELETE FROM detections WHERE File_Name = "'.explode("/",$_GET['deletefile'])[2].'" LIMIT 1');
-      if($statement1 == False){
-        echo "Error";
-        header("refresh: 0;");
-      } else {
-        $file_pointer = $home."/BirdSongs/Extracted/By_Date/".$_GET['deletefile'];
-        if (!exec("sudo rm $file_pointer && sudo rm $file_pointer.png")) {
-          echo "OK";
-        } else {
-          echo "Error";
-        }
-
-      }
-      $result1 = $statement1->execute();
-      die();
-    } else {
-      header('WWW-Authenticate: Basic realm="My Realm"');
-      header('HTTP/1.0 401 Unauthorized');
-      echo 'You must be authenticated to change the protection of files.';
-      exit;
-    }
-  } else {
-    header('WWW-Authenticate: Basic realm="My Realm"');
-    header('HTTP/1.0 401 Unauthorized');
-    echo 'You must be authenticated to change the protection of files.';
-    exit;
+  ensure_authenticated('You must be authenticated to delete files.');
+  if (preg_match('~^.*(\.\.\/).+$~', $_GET['deletefile'])) {
+    echo "Error";
+    die();
   }
+  $db_writable = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_READWRITE);
+  $db->busyTimeout(1000);
+  $statement1 = $db_writable->prepare('DELETE FROM detections WHERE File_Name = :file_name LIMIT 1');
+  ensure_db_ok($statement1);
+  $statement1->bindValue(':file_name', explode("/", $_GET['deletefile'])[2]);
+  $file_pointer = $home."/BirdSongs/Extracted/By_Date/".$_GET['deletefile'];
+  if (!exec("sudo rm $file_pointer && sudo rm $file_pointer.png")) {
+    echo "OK";
+  } else {
+    echo "Error";
+  }
+  $result1 = $statement1->execute();
+  $db_writable->close();
+  die();
 }
 
 if(isset($_GET['excludefile'])) {
-  if(isset($_SERVER['PHP_AUTH_USER'])) {
-    $submittedpwd = $_SERVER['PHP_AUTH_PW'];
-    $submitteduser = $_SERVER['PHP_AUTH_USER'];
-    if($submittedpwd == $config['CADDY_PWD'] && $submitteduser == 'birdnet'){
-      if(!file_exists($home."/BirdNET-Pi/scripts/disk_check_exclude.txt")) {
-        file_put_contents($home."/BirdNET-Pi/scripts/disk_check_exclude.txt", "##start\n##end\n");
-      }
-      if(isset($_GET['exclude_add'])) {
-        $myfile = fopen($home."/BirdNET-Pi/scripts/disk_check_exclude.txt", "a") or die("Unable to open file!");
-        $txt = $_GET['excludefile'];
-        fwrite($myfile, $txt."\n");
-        fwrite($myfile, $txt.".png\n");
-        fclose($myfile);
-        echo "OK";
-        die();
-      } else {
-        $lines  = file($home."/BirdNET-Pi/scripts/disk_check_exclude.txt");
-        $search = $_GET['excludefile'];
-
-        $result = '';
-        foreach($lines as $line) {
-          if(stripos($line, $search) === false && stripos($line, $search.".png") === false) {
-            $result .= $line;
-          }
-        }
-        file_put_contents($home."/BirdNET-Pi/scripts/disk_check_exclude.txt", $result);
-        echo "OK";
-        die();
-      }
-    } else {
-      header('WWW-Authenticate: Basic realm="My Realm"');
-      header('HTTP/1.0 401 Unauthorized');
-      echo 'You must be authenticated to change the protection of files.';
-      exit;
-    }
+  ensure_authenticated('You must be authenticated to change the protection of files.');
+  if(!file_exists($home."/BirdNET-Pi/scripts/disk_check_exclude.txt")) {
+    file_put_contents($home."/BirdNET-Pi/scripts/disk_check_exclude.txt", "##start\n##end\n");
+  }
+  if(isset($_GET['exclude_add'])) {
+    $myfile = fopen($home."/BirdNET-Pi/scripts/disk_check_exclude.txt", "a") or die("Unable to open file!");
+    $txt = $_GET['excludefile'];
+    fwrite($myfile, $txt."\n");
+    fwrite($myfile, $txt.".png\n");
+    fclose($myfile);
+    echo "OK";
+    die();
   } else {
-    header('WWW-Authenticate: Basic realm="My Realm"');
-    header('HTTP/1.0 401 Unauthorized');
-    echo 'You must be authenticated to change the protection of files.';
-    exit;
+    $lines  = file($home."/BirdNET-Pi/scripts/disk_check_exclude.txt");
+    $search = $_GET['excludefile'];
+
+    $result = '';
+    foreach($lines as $line) {
+      if(stripos($line, $search) === false && stripos($line, $search.".png") === false) {
+        $result .= $line;
+      }
+    }
+    file_put_contents($home."/BirdNET-Pi/scripts/disk_check_exclude.txt", $result);
+    echo "OK";
+    die();
   }
 }
 
 $shifted_path = $home."/BirdSongs/Extracted/By_Date/shifted/";
 
 if(isset($_GET['shiftfile'])) {
-
-  if (file_exists('./scripts/thisrun.txt')) {
-  $config = parse_ini_file('./scripts/thisrun.txt');
-} elseif (file_exists('./scripts/firstrun.ini')) {
-  $config = parse_ini_file('./scripts/firstrun.ini');
-}
-$user = shell_exec("awk -F: '/1000/{print $1}' /etc/passwd");
-$home = shell_exec("awk -F: '/1000/{print $6}' /etc/passwd");
-$home = trim($home);
-$caddypwd = $config['CADDY_PWD'];
-if (!isset($_SERVER['PHP_AUTH_USER'])) {
-  header('WWW-Authenticate: Basic realm="My Realm"');
-  header('HTTP/1.0 401 Unauthorized');
-  echo '<table><tr><td>You cannot shift files for this installation</td></tr></table>';
-  exit;
-} else {
-  $submittedpwd = $_SERVER['PHP_AUTH_PW'];
-  $submitteduser = $_SERVER['PHP_AUTH_USER'];
-  if($submittedpwd !== $caddypwd || $submitteduser !== 'birdnet'){
-    header('WWW-Authenticate: Basic realm="My Realm"');
-    header('HTTP/1.0 401 Unauthorized');
-    echo '<table><tr><td>You cannot shift files for this installation<</td></tr></table>';
-    exit;
-  }
-}
+  ensure_authenticated('You cannot shift files for this installation');
 
     $filename = $_GET['shiftfile'];
     $pp = pathinfo($filename);
@@ -163,10 +101,7 @@ if (!isset($_SERVER['PHP_AUTH_USER'])) {
 
 if(isset($_GET['bydate'])){
   $statement = $db->prepare('SELECT DISTINCT(Date) FROM detections GROUP BY Date ORDER BY Date DESC');
-  if($statement == False){
-    echo "Database is busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement);
   $result = $statement->execute();
   $view = "bydate";
 
@@ -180,10 +115,7 @@ if(isset($_GET['bydate'])){
   } else {
     $statement = $db->prepare("SELECT DISTINCT(Com_Name) FROM detections WHERE Date == \"$date\" ORDER BY Com_Name");
   }
-  if($statement == False){
-    echo "Database is busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement);
   $result = $statement->execute();
   $view = "date";
 
@@ -195,10 +127,7 @@ if(isset($_GET['bydate'])){
     $statement = $db->prepare('SELECT DISTINCT(Com_Name) FROM detections ORDER BY Com_Name ASC');
   } 
   session_start();
-  if($statement == False){
-    echo "Database is busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement);
   $result = $statement->execute();
   $view = "byspecies";
 
@@ -208,29 +137,28 @@ if(isset($_GET['bydate'])){
   session_start();
   $_SESSION['species'] = $species;
   $statement = $db->prepare("SELECT * FROM detections WHERE Com_Name == \"$species\" ORDER BY Com_Name");
+  ensure_db_ok($statement);
   $statement3 = $db->prepare("SELECT Date, Time, Sci_Name, MAX(Confidence), File_Name FROM detections WHERE Com_Name == \"$species\" ORDER BY Com_Name");
-  if($statement == False || $statement3 == False){
-    echo "Database is busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement3);
   $result = $statement->execute();
   $result3 = $statement3->execute();
   $view = "species";
 } else {
-  session_start();
-  session_unset();
+  unset($_SESSION['species']);
+  unset($_SESSION['date']);
   $view = "choose";
 }
-?>
 
-<html>
+if (get_included_files()[0] === __FILE__) {
+  echo '<!DOCTYPE html>
+<html lang="en">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-    </style>
-  </head>
+  </head>';
+}
 
+?>
 <script>
 function deleteDetection(filename,copylink=false) {
   if (confirm("Are you sure you want to delete this detection from the database?") == true) {
@@ -332,7 +260,7 @@ if(!isset($_GET['species']) && !isset($_GET['filename'])){
 <?php if($view == "byspecies" || $view == "date") { ?>
 <div style="width: auto;
    text-align: center">
-   <form action="" method="GET">
+   <form action="views.php" method="GET">
       <input type="hidden" name="view" value="Recordings">
       <input type="hidden" name="<?php echo $view; ?>" value="<?php echo $_GET['date']; ?>">
       <button <?php if(!isset($_GET['sort']) || $_GET['sort'] == "alphabetical"){ echo "style='background:#9fe29b !important;'"; }?> class="sortbutton" type="submit" name="sort" value="alphabetical">
@@ -343,12 +271,11 @@ if(!isset($_GET['species']) && !isset($_GET['filename'])){
       </button>
    </form>
 </div>
+<br>
 <?php } ?>
-
+<form action="views.php" method="GET">
+<input type="hidden" name="view" value="Recordings">
 <table>
-  <tr>
-    <form action="" method="GET">
-    <input type="hidden" name="view" value="Recordings">
 <?php
   #By Date
   if($view == "bydate") {
@@ -437,16 +364,14 @@ for ($row = 0; $row < $num_rows; $row++) {
       <tr><td><button action=\"submit\" name=\"bydate\" value=\"bydate\">By Date</button></td>";
   } 
 
-  echo "</form>
-    </tr>
-    </table>";
+  echo "</table></form>";
 }
 
 #Specific Species
 if(isset($_GET['species'])){ ?>
 <div style="width: auto;
    text-align: center">
-   <form action="" method="GET">
+   <form action="views.php" method="GET">
       <input type="hidden" name="view" value="Recordings">
       <input type="hidden" name="species" value="<?php echo $_GET['species']; ?>">
       <input type="hidden" name="sort" value="<?php echo $_GET['sort']; ?>">
@@ -465,6 +390,8 @@ if(isset($_GET['species'])){ ?>
   $fp = @fopen($home."/BirdNET-Pi/scripts/disk_check_exclude.txt", 'r'); 
 if ($fp) {
   $disk_check_exclude_arr = explode("\n", fread($fp, filesize($home."/BirdNET-Pi/scripts/disk_check_exclude.txt")));
+} else {
+  $disk_check_exclude_arr = [];
 }
 
 $name = $_GET['species'];
@@ -482,10 +409,7 @@ if(isset($_SESSION['date'])) {
     $statement2 = $db->prepare("SELECT * FROM detections where Com_Name == \"$name\" ORDER BY Date DESC, Time DESC");
   }
 }
-if($statement2 == False){
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement2);
 $result2 = $statement2->execute();
 $num_rows = 0;
 while ($result2->fetchArray(SQLITE3_ASSOC)) {
@@ -572,10 +496,7 @@ echo "<table>
   if(isset($_GET['filename'])){
     $name = $_GET['filename'];
     $statement2 = $db->prepare("SELECT * FROM detections where File_name == \"$name\" ORDER BY Date DESC, Time DESC");
-    if($statement2 == False){
-      echo "Database is busy";
-      header("refresh: 0;");
-    }
+    ensure_db_ok($statement2);
     $result2 = $statement2->execute();
     echo "<table>
       <tr>
@@ -640,15 +561,8 @@ echo "<table>
             </tr>";
         }
 
-      }echo "</table>";}?>
-</div>
-<style>
-td.spec {
-  width: calc(100% / <?php echo $num_cols;?>);
+      }echo "</table>";}
+      echo "</div>";
+if (get_included_files()[0] === __FILE__) {
+  echo '</html>';
 }
-tr:first-child td.spec {
-  padding-top: 10px;
-}
-</style>
-
-</html>

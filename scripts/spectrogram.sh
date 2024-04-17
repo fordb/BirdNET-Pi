@@ -12,18 +12,21 @@ if [ "$LOGGING_LEVEL" == "info" ] || [ "$LOGGING_LEVEL" == "debug" ];then
   set -x
 fi
 
-# Time to sleep between generating spectrogram's, default set the recording length
-# To try catch the spectrogram as soon as possible run at a smaller intervals
-SLEEP_DELAY=$((RECORDING_LENGTH / 4))
+next=0
+looptime=$(( RECORDING_LENGTH * 2 / 3 ))
 
-# Continuously loop generating a spectrogram every 10 seconds
-while true; do
-  analyzing_now="$(cat $HOME/BirdNET-Pi/analyzing_now.txt)"
+touch "$HOME/BirdSongs/StreamData/analyzing_now.txt"
+# Continuously loop generating a spectrogram
+inotifywait -m -e close_write "$HOME/BirdSongs/StreamData/analyzing_now.txt" |
+while read; do
+  now=$(date +%s)
+  if (( now > next )); then
+    analyzing_now="$(<$HOME/BirdSongs/StreamData/analyzing_now.txt)"
 
-  if [ ! -z "${analyzing_now}" ] && [ -f "${analyzing_now}" ]; then
-    spectrogram_png=${EXTRACTED}/spectrogram.png
-    sox -V1 "${analyzing_now}" -n remix 1 rate 24k spectrogram -c "${analyzing_now//$HOME\//}" -o "${spectrogram_png}"
+    if [ -n "${analyzing_now}" ] && [ -f "${analyzing_now}" ]; then
+      spectrogram_png=${EXTRACTED}/spectrogram.png
+      sox -V1 "${analyzing_now}" -n remix 1 rate 24k spectrogram -c "${analyzing_now//$HOME\//}" -o "${spectrogram_png}"
+    fi
+    next=$(( now + looptime ))
   fi
-
-  sleep $SLEEP_DELAY
 done

@@ -7,42 +7,29 @@ $_POST  = filter_input_array(INPUT_POST, FILTER_SANITIZE_STRING);
 ini_set('user_agent', 'PHP_Flickr/1.0');
 error_reporting(0);
 ini_set('display_errors', 0);
+require_once 'scripts/common.php';
+$home = get_home();
 
-$db = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_CREATE | SQLITE3_OPEN_READWRITE);
-if($db == False) {
-  echo "Database busy";
-  header("refresh: 0;");
-}
+$db = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_READONLY);
+$db->busyTimeout(1000);
 
 if(isset($_GET['sort']) && $_GET['sort'] == "occurrences") {
   
   $statement = $db->prepare('SELECT Date, Time, File_Name, Com_Name, COUNT(*), MAX(Confidence) FROM detections GROUP BY Com_Name ORDER BY COUNT(*) DESC');
-  if($statement == False) {
-    echo "Database busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement);
   $result = $statement->execute();
 
   $statement2 = $db->prepare('SELECT Date, Time, File_Name, Com_Name, COUNT(*), MAX(Confidence) FROM detections GROUP BY Com_Name ORDER BY COUNT(*) DESC');
-  if($statement == False) {
-    echo "Database busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement2);
   $result2 = $statement2->execute();
 } else {
 
   $statement = $db->prepare('SELECT Date, Time, File_Name, Com_Name, COUNT(*), MAX(Confidence) FROM detections GROUP BY Com_Name ORDER BY Com_Name ASC');
-  if($statement == False) {
-    echo "Database busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement);
   $result = $statement->execute();
 
   $statement2 = $db->prepare('SELECT Date, Time, File_Name, Com_Name, COUNT(*), MAX(Confidence) FROM detections GROUP BY Com_Name ORDER BY Com_Name ASC');
-  if($statement == False) {
-    echo "Database busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement2);
   $result2 = $statement2->execute();
 }
 
@@ -51,38 +38,31 @@ if(isset($_GET['sort']) && $_GET['sort'] == "occurrences") {
 if(isset($_GET['species'])){
   $selection = $_GET['species'];
   $statement3 = $db->prepare("SELECT Com_Name, Sci_Name, COUNT(*), MAX(Confidence), File_Name, Date, Time from detections WHERE Com_Name = \"$selection\"");
-  if($statement3 == False) {
-    echo "Database busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement3);
   $result3 = $statement3->execute();
 }
 
-$user = shell_exec("awk -F: '/1000/{print $1}' /etc/passwd");
-$home = shell_exec("awk -F: '/1000/{print $6}' /etc/passwd");
-$home = trim($home);
 if(!file_exists($home."/BirdNET-Pi/scripts/disk_check_exclude.txt") || strpos(file_get_contents($home."/BirdNET-Pi/scripts/disk_check_exclude.txt"),"##start") === false) {
   file_put_contents($home."/BirdNET-Pi/scripts/disk_check_exclude.txt", "");
   file_put_contents($home."/BirdNET-Pi/scripts/disk_check_exclude.txt", "##start\n##end\n");
 }
-?>
 
+if (get_included_files()[0] === __FILE__) {
+  echo '<!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BirdNET-Pi DB</title>
-<style>
-</style>
+</head>';
+}
+?>
 
-</head>
-<body>
 <div class="stats">
 <div class="column">
   <div style="width: auto;
    text-align: center">
-   <form action="" method="GET">
+   <form action="views.php" method="GET">
     <input type="hidden" name="sort" value="<?php if(isset($_GET['sort'])){echo $_GET['sort'];}?>">
       <input type="hidden" name="view" value="Species Stats">
       <button <?php if(!isset($_GET['sort']) || $_GET['sort'] == "alphabetical"){ echo "style='background:#9fe29b !important;'"; }?> class="sortbutton" type="submit" name="sort" value="alphabetical">
@@ -93,7 +73,11 @@ if(!file_exists($home."/BirdNET-Pi/scripts/disk_check_exclude.txt") || strpos(fi
       </button>
    </form>
 </div>
-<table style="padding-top:10px">
+<br>
+<form action="views.php" method="GET">
+<input type="hidden" name="sort" value="<?php if(isset($_GET['sort'])){echo $_GET['sort'];}?>">
+<input type="hidden" name="view" value="Species Stats">
+<table>
   <?php
   $birds = array();
   while($results=$result2->fetchArray(SQLITE3_ASSOC))
@@ -120,11 +104,7 @@ if(!file_exists($home."/BirdNET-Pi/scripts/disk_check_exclude.txt") || strpos(fi
       if ($index < count($birds)) {
         ?>
         <td>
-          <form action="" method="GET">
-            <input type="hidden" name="sort" value="<?php if(isset($_GET['sort'])){echo $_GET['sort'];}?>">
-            <input type="hidden" name="view" value="Species Stats">
             <button type="submit" name="species" value="<?php echo $birds[$index];?>"><?php echo $birds[$index];?></button>
-          </form>
         </td>
         <?php
       } else {
@@ -136,16 +116,7 @@ if(!file_exists($home."/BirdNET-Pi/scripts/disk_check_exclude.txt") || strpos(fi
   }
   ?>
 </table>
-<style>
-td {
-  padding: 0px;
-  width: calc(100% / <?php echo $num_cols;?>);
-}
-tr:first-child td {
-  padding-top: 10px;
-}
-</style>
-
+</form>
 </div>
 <dialog style="margin-top: 5px;max-height: 95vh;
   overflow-y: auto;overscroll-behavior:contain" id="attribution-dialog">
@@ -209,11 +180,8 @@ while($results=$result3->fetchArray(SQLITE3_ASSOC)){
   
   ob_flush();
   flush();
-  if (file_exists('./scripts/thisrun.txt')) {
-    $config = parse_ini_file('./scripts/thisrun.txt');
-  } elseif (file_exists('./scripts/firstrun.ini')) {
-    $config = parse_ini_file('./scripts/firstrun.ini');
-  }
+  $config = get_config();
+
   if (! empty($config["FLICKR_API_KEY"])) {
     // only open the file once per script execution
     if(!isset($lines)) {
@@ -247,7 +215,9 @@ while($results=$result3->fetchArray(SQLITE3_ASSOC)){
 <?php } else {?>
 <hr><br>
 <?php } ?>
-
+  <form action="views.php" method="GET">
+    <input type="hidden" name="sort" value="<?php if(isset($_GET['sort'])){echo $_GET['sort'];}?>">
+    <input type="hidden" name="view" value="Species Stats">
     <table>
 <?php
 $excludelines = [];
@@ -261,9 +231,7 @@ array_push($excludelines, $results['Date']."/".$comname."/".$results['File_Name'
 array_push($excludelines, $results['Date']."/".$comname."/".$results['File_Name'].".png");
 ?>
       <tr>
-      <form action="" method="GET">
-        <input type="hidden" name="sort" value="<?php if(isset($_GET['sort'])){echo $_GET['sort'];}?>">
-      <td class="relative"><a target="_blank" href="index.php?filename=<?php echo $results['File_Name']; ?>"><img title="Open in new tab" class="copyimage" width=25 src="images/copy.png"></a><input type="hidden" name="view" value="Species Stats">
+      <td class="relative"><a target="_blank" href="index.php?filename=<?php echo $results['File_Name']; ?>"><img title="Open in new tab" class="copyimage" width=25 src="images/copy.png"></a>
         <button type="submit" name="species" value="<?php echo $results['Com_Name'];?>"><?php echo $results['Com_Name'];?></button><br><b>Occurrences:</b> <?php echo $results['COUNT(*)'];?><br>
       <b>Max Confidence:</b> <?php echo $percent = round((float)round($results['MAX(Confidence)'],2) * 100 ) . '%';?><br>
       <b>Best Recording:</b> <?php echo $results['Date']." ".$results['Time'];?><br><video onplay='setLiveStreamVolume(0)' onended='setLiveStreamVolume(1)' onpause='setLiveStreamVolume(1)' controls poster="<?php echo $filename.".png";?>" preload="none" title="<?php echo $filename;?>"><source src="<?php echo $filename;?>" type="audio/mp3"></video></td>
@@ -275,8 +243,10 @@ $file = file_get_contents($home."/BirdNET-Pi/scripts/disk_check_exclude.txt");
 file_put_contents($home."/BirdNET-Pi/scripts/disk_check_exclude.txt", "##start"."\n".implode("\n",$excludelines)."\n".substr($file, strpos($file, "##end")));
 ?>
     </table>
-      </form>
+  </form>
 </div>
 </div>
-</body>
-</html>
+<?php
+if (get_included_files()[0] === __FILE__) {
+  echo '</body></html>';
+}

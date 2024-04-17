@@ -4,7 +4,7 @@
   BirdNET-Pi
 </h1>
 <p align="center">
-A realtime acoustic bird classification system for the Raspberry Pi 4B, 400, 3B+, and 0W2
+A realtime acoustic bird classification system for the Raspberry Pi 5, 4B, 400, 3B+, and 0W2
 </p>
 <p align="center">
   <img src="https://user-images.githubusercontent.com/60325264/140656397-bf76bad4-f110-467c-897d-992ff0f96476.png" />
@@ -12,6 +12,29 @@ A realtime acoustic bird classification system for the Raspberry Pi 4B, 400, 3B+
 <p align="center">
 Icon made by <a href="https://www.freepik.com" title="Freepik">Freepik</a> from <a href="https://www.flaticon.com/" title="Flaticon">www.flaticon.com</a>
 </p>
+
+## About this fork:
+I started building on [mcguirepr89's](https://github.com/mcguirepr89/BirdNET-Pi) repo, but then noticed [Nachtzuster's](https://github.com/Nachtzuster/BirdNET-Pi) fork and started building on that instead
+
+## About Nachtzuster's Fork
+
+Changes include:
+
+ - Bookworm support
+ - Experimental support for writing transient files to tmpfs
+ - Rework analysis to consolidate analysis/server/extraction. Should make analysis more robust and slightly more efficient, especially on installations with a large number of recordings
+ - Bump tflite_runtime to 2.11.0, it is faster
+ - Rework daily_plot.py (chart_viewer) to run as a daemon to avoid the very expensive startup
+ - Bump apprise version, so more notification type are possible
+ - Fix: Setting Excluded/Custom species from the UI, that have a ' now works
+ - Fix: Setting apprise notification body and apprise notification title that include 'special' characters like `"{}` now is possible. So you can send json now
+ - Fix: add missing languages for new model
+ - Fix: Daily Chart was not including new detections due to caching
+ - Fix: changing advanced settings was not updating on a fresh install ed. CHANNELS, RECORDING_LENGTH, ... simplify
+ - Fix: PrivacyThreshold now works as intended
+ - Support for 'Species range model V2.4 - V2'
+
+!! note: see 'Migrating' on how to migrate from mcguirepr89
 
 ## Introduction
 BirdNET-Pi is built on the [BirdNET framework](https://github.com/kahst/BirdNET-Analyzer) by [**@kahst**](https://github.com/kahst) <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/"><img src="https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg"></a> using [pre-built TFLite binaries](https://github.com/PINTO0309/TensorflowLite-bin) by [**@PINTO0309**](https://github.com/PINTO0309) . It is able to recognize bird sounds from a USB microphone or sound card in realtime and share its data with the rest of the world.
@@ -68,7 +91,7 @@ Currently listening in these countries . . . that I know of . . .
 * **Automatic disk space management** that periodically purges old audio files
 * [BirdWeather](https://app.birdweather.com) integration -- you can request a BirdWeather ID from BirdNET-Pi's "Tools" > "Settings" page
 * Web interface access to all data and logs provided by [Caddy](https://caddyserver.com)
-* [GoTTY](https://github.com/yudai/gotty) Web Terminal
+* [GoTTY](https://github.com/yudai/gotty) and [GoTTY x86](https://github.com/sorenisanerd/gotty) Web Terminal
 * [Tiny File Manager](https://tinyfilemanager.github.io/)
 * FTP server included
 * SQLite3 Database
@@ -78,8 +101,8 @@ Currently listening in these countries . . . that I know of . . .
 * Localization supported
 
 ## Requirements
-* A Raspberry Pi 4B, Raspberry Pi 400, Raspberry Pi 3B+, or Raspberry Pi 0W2 (The 3B+ and 0W2 must run on RaspiOS-ARM64-**Lite**)
-* An SD Card with the **_64-bit version of RaspiOS_** installed (please use Bullseye) -- Lite is recommended, but the installation works on RaspiOS-ARM64-Full as well. Downloads available within the [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
+* A Raspberry Pi 5, Raspberry 4B, Raspberry Pi 400, Raspberry Pi 3B+, or Raspberry Pi 0W2 (The 3B+ and 0W2 must run on RaspiOS-ARM64-**Lite**)
+* An SD Card with the **_64-bit version of RaspiOS_** installed (please use Bookworm) -- Lite is recommended, but the installation works on RaspiOS-ARM64-Full as well. Downloads available within the [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
 * A USB Microphone or Sound Card
 
 ## Installation
@@ -122,7 +145,16 @@ Use the web interface and go to "Tools" > "System Controls" > "Update." If you e
 ```
 /usr/local/bin/uninstall.sh && cd ~ && rm -drf BirdNET-Pi
 ```
+## Migrating
+Before switching, make sure your installation is fully up-to-date. Also make sure to have a backup, that is also the only way to get back to the original BirdNET-Pi.
+Please note that upgrading your underlying OS to Bookworm is not going to work. Please stick to Bullseye. If you do want Bookworm, you need to start from a fresh install and copy back your data. (remember the backup!)
 
+Run these commands to migrate to this repo:
+```
+git remote remove origin
+git remote add origin https://github.com/Nachtzuster/BirdNET-Pi.git
+./scripts/update_birdnet.sh
+```
 ## Troubleshooting and Ideas
 *Hint: A lot of weird problems can be solved by simply restarting the core services. Do this from the web interface "Tools" > "Services" > "Restart Core Services"
 Having trouble or have an idea? *Submit an issue for trouble* and a *discussion for ideas*. Please do *not* submit an issue as a discussion -- the issue tracker solicits information that is needed for anyone to help -- discussions are *not for issues*.

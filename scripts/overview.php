@@ -5,31 +5,20 @@ ini_set('session.gc_maxlifetime', 7200);
 ini_set('user_agent', 'PHP_Flickr/1.0');
 session_set_cookie_params(7200);
 session_start();
+require_once 'scripts/common.php';
+$home = get_home();
+$config = get_config();
+
+set_timezone();
 $myDate = date('Y-m-d');
 $chart = "Combo-$myDate.png";
 $sparklines = "Sparklines-$myDate.png";
 
-$db = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_CREATE | SQLITE3_OPEN_READWRITE);
-if($db == False) {
-  echo "Database is busy";
-  header("refresh: 0;");
-}
-
-if (file_exists('./scripts/thisrun.txt')) {
-  $config = parse_ini_file('./scripts/thisrun.txt');
-} elseif (file_exists('./scripts/firstrun.ini')) {
-  $config = parse_ini_file('./scripts/firstrun.ini');
-}
-
-$user = shell_exec("awk -F: '/1000/{print $1}' /etc/passwd");
-$home = shell_exec("awk -F: '/1000/{print $6}' /etc/passwd");
-$home = trim($home);
+$db = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_READONLY);
+$db->busyTimeout(1000);
 
 $statement2 = $db->prepare('SELECT COUNT(*) FROM detections WHERE Date == DATE(\'now\', \'localtime\')');
-if($statement2 == False) {
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement2);
 $result2 = $statement2->execute();
 $todaycount = $result2->fetchArray(SQLITE3_ASSOC);
 
@@ -48,30 +37,13 @@ if(isset($_GET['custom_image'])){
 }
 
 if(isset($_GET['blacklistimage'])) {
-  if(isset($_SERVER['PHP_AUTH_USER'])) {
-    $submittedpwd = $_SERVER['PHP_AUTH_PW'];
-    $submitteduser = $_SERVER['PHP_AUTH_USER'];
-    if($submittedpwd == $config['CADDY_PWD'] && $submitteduser == 'birdnet'){
-
-      $imageid = $_GET['blacklistimage'];
-      $file_handle = fopen($home."/BirdNET-Pi/scripts/blacklisted_images.txt", 'a+');
-      fwrite($file_handle, $imageid . "\n");
-      fclose($file_handle);
-      unset($_SESSION['images']);
-      die("OK");
-    } else {
-      header('WWW-Authenticate: Basic realm="My Realm"');
-      header('HTTP/1.0 401 Unauthorized');
-      echo 'You must be authenticated.';
-      exit;
-    }
-  } else {
-    header('WWW-Authenticate: Basic realm="My Realm"');
-    header('HTTP/1.0 401 Unauthorized');
-    echo 'You must be authenticated.';
-    exit;
-  }
-
+  ensure_authenticated('You must be authenticated.');
+  $imageid = $_GET['blacklistimage'];
+  $file_handle = fopen($home."/BirdNET-Pi/scripts/blacklisted_images.txt", 'a+');
+  fwrite($file_handle, $imageid . "\n");
+  fclose($file_handle);
+  unset($_SESSION['images']);
+  die("OK");
 }
 
 if(isset($_GET['fetch_chart_string']) && $_GET['fetch_chart_string'] == "true") {
@@ -91,10 +63,7 @@ if(isset($_GET['fetch_sparklines_string']) && $_GET['fetch_sparklines_string'] =
 if(isset($_GET['ajax_detections']) && $_GET['ajax_detections'] == "true" && isset($_GET['previous_detection_identifier'])) {
 
   $statement4 = $db->prepare('SELECT Com_Name, Sci_Name, Date, Time, Confidence, File_Name FROM detections ORDER BY Date DESC, Time DESC LIMIT 15');
-  if($statement4 == False) {
-    echo "Database is busy";
-    header("refresh: 0;");
-  }
+  ensure_db_ok($statement4);
   $result4 = $statement4->execute();
   if(!isset($_SESSION['images'])) {
     $_SESSION['images'] = [];
@@ -166,7 +135,12 @@ if(isset($_GET['ajax_detections']) && $_GET['ajax_detections'] == "true" && isse
           }
 
            // Read the blacklisted image ids from the file into an array
-          $blacklisted_ids = array_map('trim', file($home."/BirdNET-Pi/scripts/blacklisted_images.txt"));
+          $blacklisted_file = file($home."/BirdNET-Pi/scripts/blacklisted_images.txt");
+          if ($blacklisted_file !== false) {
+            $blacklisted_ids = array_map('trim', $blacklisted_file);
+          } else {
+            $blacklisted_ids = [];
+          }
 
           // Make the API call
           $flickrjson = json_decode(file_get_contents("https://www.flickr.com/services/rest/?method=flickr.photos.search&api_key=".$config["FLICKR_API_KEY"]."&text=".str_replace(" ", "%20", $engname).$comnameprefix."&sort=relevance".$args."&per_page=5&media=photos&format=json&nojsoncallback=1"), true)["photos"]["photo"];
@@ -230,34 +204,22 @@ if(isset($_GET['ajax_detections']) && $_GET['ajax_detections'] == "true" && isse
 if(isset($_GET['ajax_left_chart']) && $_GET['ajax_left_chart'] == "true") {
 
 $statement = $db->prepare('SELECT COUNT(*) FROM detections');
-if($statement == False) {
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement);
 $result = $statement->execute();
 $totalcount = $result->fetchArray(SQLITE3_ASSOC);
 
 $statement3 = $db->prepare('SELECT COUNT(*) FROM detections WHERE Date == Date(\'now\', \'localtime\') AND TIME >= TIME(\'now\', \'localtime\', \'-1 hour\')');
-if($statement3 == False) {
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement3);
 $result3 = $statement3->execute();
 $hourcount = $result3->fetchArray(SQLITE3_ASSOC);
 
 $statement5 = $db->prepare('SELECT COUNT(DISTINCT(Com_Name)) FROM detections WHERE Date == Date(\'now\',\'localtime\')');
-if($statement5 == False) {
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement5);
 $result5 = $statement5->execute();
 $speciestally = $result5->fetchArray(SQLITE3_ASSOC);
 
 $statement6 = $db->prepare('SELECT COUNT(DISTINCT(Com_Name)) FROM detections');
-if($statement6 == False) {
-  echo "Database is busy";
-  header("refresh: 0;");
-}
+ensure_db_ok($statement6);
 $result6 = $statement6->execute();
 $totalspeciestally = $result6->fetchArray(SQLITE3_ASSOC);
   
@@ -269,8 +231,7 @@ $totalspeciestally = $result6->fetchArray(SQLITE3_ASSOC);
   </tr>
   <tr>
     <th>Today</th>
-    
-    <td><form action="" method="GET"><button type="submit" name="view" value="Today's Detections"><?php echo $todaycount['COUNT(*)'];?></button></td>
+    <td><form action="" method="GET"><button type="submit" name="view" value="Todays Detections"><?php echo $todaycount['COUNT(*)'];?></button></td>
     </form>
   </tr>
   <tr>
@@ -291,15 +252,17 @@ $totalspeciestally = $result6->fetchArray(SQLITE3_ASSOC);
 <?php
 die();
 }
-?>
+
+if (get_included_files()[0] === __FILE__) {
+  echo '<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Overview</title>
-<style>
-
-</style>
-</head>
+</head>';
+}
+?>
 <div class="overview">
   <dialog style="margin-top: 5px;max-height: 95vh;
   overflow-y: auto;overscroll-behavior:contain" id="attribution-dialog">
@@ -380,7 +343,7 @@ if (file_exists('./Charts/'.$sparklines)) {
 
 </div>
 </div>
-
+</div>
 <script>
 // we're passing a unique ID of the currently displayed detection to our script, which checks the database to see if the newest detection entry is that ID, or not. If the IDs don't match, it must mean we have a new detection and it's loaded onto the page
 function loadDetectionIfNewExists(previous_detection_identifier=undefined) {

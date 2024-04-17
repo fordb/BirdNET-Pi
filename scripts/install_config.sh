@@ -43,8 +43,9 @@ LONGITUDE=$LONGITUDE
 #______________________used for detecting bird audio.__________________________#
 #_It's recommended that you only change these values through the web interface.#
 
-MODEL=BirdNET_6K_GLOBAL_MODEL
+MODEL=BirdNET_GLOBAL_6K_V2.4_Model_FP16
 SF_THRESH=0.03
+DATA_MODEL_VERSION=2
 
 #---------------------  BirdWeather Station Information -----------------------#
 #_____________The variable below can be set to have your BirdNET-Pi____________#
@@ -93,10 +94,13 @@ BIRDNETPI_URL=
 
 RTSP_STREAM=
 
+## RTSP_STREAM_TO_LIVESTREAM is the index, so 0 means the first stream
+RTSP_STREAM_TO_LIVESTREAM="0"
+
 #-----------------------  Apprise Miscellanous Configuration -------------------#
 
 APPRISE_NOTIFICATION_TITLE="New BirdNET-Pi Detection"
-APPRISE_NOTIFICATION_BODY="A \$comname (\$sciname)  was just detected with a confidence of \$confidence"
+APPRISE_NOTIFICATION_BODY="A \$comname (\$sciname)  was just detected with a confidence of \$confidence (\$reason)"
 APPRISE_NOTIFY_EACH_DETECTION=0
 APPRISE_NOTIFY_NEW_SPECIES=0
 APPRISE_WEEKLY_REPORT=1
@@ -116,6 +120,11 @@ FLICKR_FILTER_EMAIL=
 ################################################################################
 #--------------------------------  Defaults  ----------------------------------#
 ################################################################################
+
+## BIRDNET_USER is for scripts to easily find where BirdNET-Pi is installed
+## DO NOT EDIT!
+
+BIRDNET_USER=$USER
 
 ## RECS_DIR is the location birdnet_analysis.service will look for the data-set
 ## it needs to analyze. Be sure this directory is readable and writable for
@@ -246,6 +255,9 @@ CUSTOM_IMAGE_TITLE=""
 LAST_RUN=
 THIS_RUN=
 IDFILE=$HOME/BirdNET-Pi/IdentifiedSoFar.txt
+LogLevel_BirdnetRecordingService="error"
+LogLevel_LiveAudioStreamService="error"
+LogLevel_SpectrogramViewerService="error"
 EOF
 }
 

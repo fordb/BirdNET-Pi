@@ -2,43 +2,22 @@
 ini_set('display_errors', 1);
 error_reporting(E_ERROR);
 
-if (file_exists('./scripts/thisrun.txt')) {
-  $config = parse_ini_file('./scripts/thisrun.txt');
-} elseif (file_exists('firstrun.ini')) {
-  $config = parse_ini_file('firstrun.ini');
-}
+require_once "scripts/common.php";
+$home = get_home();
+$config = get_config();
 
-$caddypwd = $config['CADDY_PWD'];
-if (!isset($_SERVER['PHP_AUTH_USER'])) {
-  header('WWW-Authenticate: Basic realm="My Realm"');
-  header('HTTP/1.0 401 Unauthorized');
-  echo '<table><tr><td>You cannot edit the settings for this installation</td></tr></table>';
-  exit;
-} else {
-  $submittedpwd = $_SERVER['PHP_AUTH_PW'];
-  $submitteduser = $_SERVER['PHP_AUTH_USER'];
-  if($submittedpwd !== $caddypwd || $submitteduser !== 'birdnet'){
-    header('WWW-Authenticate: Basic realm="My Realm"');
-    header('HTTP/1.0 401 Unauthorized');
-    echo '<table><tr><td>You cannot edit the settings for this installation</td></tr></table>';
-    exit;
-  }
-}
+ensure_authenticated();
 
 if(isset($_GET['submit'])) {
   $contents = file_get_contents('/etc/birdnet/birdnet.conf');
-  $contents2 = file_get_contents('./scripts/thisrun.txt');
+  $restart_livestream = false;
+  $update_caddyfile = false;
 
   if(isset($_GET["caddy_pwd"])) {
     $caddy_pwd = $_GET["caddy_pwd"];
     if(strcmp($caddy_pwd,$config['CADDY_PWD']) !== 0) {
       $contents = preg_replace("/CADDY_PWD=.*/", "CADDY_PWD=\"$caddy_pwd\"", $contents);
-      $contents2 = preg_replace("/CADDY_PWD=.*/", "CADDY_PWD=\"$caddy_pwd\"", $contents2);
-      $fh = fopen('/etc/birdnet/birdnet.conf', "w");
-      $fh2 = fopen("./scripts/thisrun.txt", "w");
-      fwrite($fh, $contents);
-      fwrite($fh2, $contents2);
-      exec('sudo /usr/local/bin/update_caddyfile.sh > /dev/null 2>&1 &');
+      $update_caddyfile = true;
     }
   }
 
@@ -46,7 +25,7 @@ if(isset($_GET['submit'])) {
     $ice_pwd = $_GET["ice_pwd"];
     if(strcmp($ice_pwd,$config['ICE_PWD']) !== 0) {
       $contents = preg_replace("/ICE_PWD=.*/", "ICE_PWD=$ice_pwd", $contents);
-      $contents2 = preg_replace("/ICE_PWD=.*/", "ICE_PWD=$ice_pwd", $contents2);
+      $restart_livestream = true;
     }
   }
 
@@ -56,12 +35,7 @@ if(isset($_GET['submit'])) {
     $birdnetpi_url = rtrim($birdnetpi_url, '/');
     if(strcmp($birdnetpi_url,$config['BIRDNETPI_URL']) !== 0) {
       $contents = preg_replace("/BIRDNETPI_URL=.*/", "BIRDNETPI_URL=$birdnetpi_url", $contents);
-      $contents2 = preg_replace("/BIRDNETPI_URL=.*/", "BIRDNETPI_URL=$birdnetpi_url", $contents2);
-      $fh = fopen('/etc/birdnet/birdnet.conf', "w");
-      $fh2 = fopen("./scripts/thisrun.txt", "w");
-      fwrite($fh, $contents);
-      fwrite($fh2, $contents2);
-      exec('sudo /usr/local/bin/update_caddyfile.sh > /dev/null 2>&1 &');
+      $update_caddyfile = true;
     }
   }
 
@@ -69,13 +43,7 @@ if(isset($_GET['submit'])) {
     $rtsp_stream = str_replace("\r\n", ",", $_GET["rtsp_stream"]);
     if(strcmp($rtsp_stream,$config['RTSP_STREAM']) !== 0) {
       $contents = preg_replace("/RTSP_STREAM=.*/", "RTSP_STREAM=\"$rtsp_stream\"", $contents);
-      $contents2 = preg_replace("/RTSP_STREAM=.*/", "RTSP_STREAM=\"$rtsp_stream\"", $contents2);
-      $fh = fopen('/etc/birdnet/birdnet.conf', "w");
-      $fh2 = fopen("./scripts/thisrun.txt", "w");
-      fwrite($fh, $contents);
-      fwrite($fh2, $contents2);
-      exec('sudo systemctl restart birdnet_recording.service');
-      exec('sudo systemctl restart livestream.service');
+      $restart_livestream = True;
     }
   }
 
@@ -85,13 +53,7 @@ if(isset($_GET['submit'])) {
     //Setting exists already, see if the value changed
     if (strcmp($rtsp_stream_selected, $config['RTSP_STREAM_TO_LIVESTREAM']) !== 0) {
       $contents = preg_replace("/RTSP_STREAM_TO_LIVESTREAM=.*/", "RTSP_STREAM_TO_LIVESTREAM=\"$rtsp_stream_selected\"", $contents);
-      $contents2 = preg_replace("/RTSP_STREAM_TO_LIVESTREAM=.*/", "RTSP_STREAM_TO_LIVESTREAM=\"$rtsp_stream_selected\"", $contents2);
-      $fh = fopen("/etc/birdnet/birdnet.conf", "w");
-      $fh2 = fopen("./scripts/thisrun.txt", "w");
-      fwrite($fh, $contents);
-      fwrite($fh2, $contents2);
-      sleep(1);
-      exec("sudo systemctl restart livestream.service");
+      $restart_livestream = True;
     }
   }
 
@@ -101,22 +63,14 @@ if(isset($_GET['submit'])) {
     //Setting exists already, see if the value changed
     if (strcmp($activate_freqshift_in_livestream, $config['ACTIVATE_FREQSHIFT_IN_LIVESTREAM']) !== 0) {
       $contents = preg_replace("/ACTIVATE_FREQSHIFT_IN_LIVESTREAM=.*/", "ACTIVATE_FREQSHIFT_IN_LIVESTREAM=\"$activate_freqshift_in_livestream\"", $contents);
-      $contents2 = preg_replace("/ACTIVATE_FREQSHIFT_IN_LIVESTREAM=.*/", "ACTIVATE_FREQSHIFT_IN_LIVESTREAM=\"$activate_freqshift_in_livestream\"", $contents2);
-      $fh = fopen("/etc/birdnet/birdnet.conf", "w");
-      $fh2 = fopen("./scripts/thisrun.txt", "w");
-      fwrite($fh, $contents);
-      fwrite($fh2, $contents2);
-      sleep(1);
-      exec("sudo systemctl restart livestream.service");
+      $restart_livestream = True;
     }
   }
-
   
   if(isset($_GET["overlap"])) {
     $overlap = $_GET["overlap"];
     if(strcmp($overlap,$config['OVERLAP']) !== 0) {
       $contents = preg_replace("/OVERLAP=.*/", "OVERLAP=$overlap", $contents);
-      $contents2 = preg_replace("/OVERLAP=.*/", "OVERLAP=$overlap", $contents2);
     }
   }
 
@@ -124,7 +78,6 @@ if(isset($_GET['submit'])) {
     $confidence = $_GET["confidence"];
     if(strcmp($confidence,$config['CONFIDENCE']) !== 0) {
       $contents = preg_replace("/CONFIDENCE=.*/", "CONFIDENCE=$confidence", $contents);
-      $contents2 = preg_replace("/CONFIDENCE=.*/", "CONFIDENCE=$confidence", $contents2);
     }
   }
 
@@ -132,7 +85,6 @@ if(isset($_GET['submit'])) {
     $sensitivity = $_GET["sensitivity"];
     if(strcmp($sensitivity,$config['SENSITIVITY']) !== 0) {
       $contents = preg_replace("/SENSITIVITY=.*/", "SENSITIVITY=$sensitivity", $contents);
-      $contents2 = preg_replace("/SENSITIVITY=.*/", "SENSITIVITY=$sensitivity", $contents2);
     }
   }
 
@@ -140,7 +92,6 @@ if(isset($_GET['submit'])) {
     $freqshift_hi = $_GET["freqshift_hi"];
     if(strcmp($freqshift_hi,$config['FREQSHIFT_HI']) !== 0) {
       $contents = preg_replace("/FREQSHIFT_HI=.*/", "FREQSHIFT_HI=$freqshift_hi", $contents);
-      $contents2 = preg_replace("/FREQSHIFT_HI=.*/", "FREQSHIFT_HI=$freqshift_hi", $contents2);
     }
   }
 
@@ -148,7 +99,6 @@ if(isset($_GET['submit'])) {
     $freqshift_lo = $_GET["freqshift_lo"];
     if(strcmp($freqshift_lo,$config['FREQSHIFT_LO']) !== 0) {
       $contents = preg_replace("/FREQSHIFT_LO=.*/", "FREQSHIFT_LO=$freqshift_lo", $contents);
-      $contents2 = preg_replace("/FREQSHIFT_LO=.*/", "FREQSHIFT_LO=$freqshift_lo", $contents2);
     }
   }
 
@@ -156,7 +106,6 @@ if(isset($_GET['submit'])) {
     $freqshift_pitch = $_GET["freqshift_pitch"];
     if(strcmp($freqshift_pitch,$config['FREQSHIFT_PITCH']) !== 0) {
       $contents = preg_replace("/FREQSHIFT_PITCH=.*/", "FREQSHIFT_PITCH=$freqshift_pitch", $contents);
-      $contents2 = preg_replace("/FREQSHIFT_PITCH=.*/", "FREQSHIFT_PITCH=$freqshift_pitch", $contents2);
     }
   }
 
@@ -164,7 +113,6 @@ if(isset($_GET['submit'])) {
     $freqshift_tool = $_GET["freqshift_tool"];
     if(strcmp($freqshift_tool,$config['FREQSHIFT_TOOL']) !== 0) {
       $contents = preg_replace("/FREQSHIFT_TOOL=.*/", "FREQSHIFT_TOOL=$freqshift_tool", $contents);
-      $contents2 = preg_replace("/FREQSHIFT_TOOL=.*/", "FREQSHIFT_TOOL=$freqshift_tool", $contents2);
     }
   }
 
@@ -172,7 +120,6 @@ if(isset($_GET['submit'])) {
     $freqshift_reconnect_delay = $_GET["freqshift_reconnect_delay"];
     if(strcmp($freqshift_hi,$config['FREQSHIFT_RECONNECT_DELAY']) !== 0) {
       $contents = preg_replace("/FREQSHIFT_RECONNECT_DELAY=.*/", "FREQSHIFT_RECONNECT_DELAY=$freqshift_reconnect_delay", $contents);
-      $contents2 = preg_replace("/FREQSHIFT_RECONNECT_DELAY=.*/", "FREQSHIFT_RECONNECT_DELAY=$freqshift_reconnect_delay", $contents2);
     }
   }
 
@@ -180,7 +127,6 @@ if(isset($_GET['submit'])) {
     $full_disk = $_GET["full_disk"];
     if(strcmp($full_disk,$config['FULL_DISK']) !== 0) {
       $contents = preg_replace("/FULL_DISK=.*/", "FULL_DISK=$full_disk", $contents);
-      $contents2 = preg_replace("/FULL_DISK=.*/", "FULL_DISK=$full_disk", $contents2);
     }
   }
 
@@ -188,8 +134,6 @@ if(isset($_GET['submit'])) {
     $privacy_threshold = $_GET["privacy_threshold"];
     if(strcmp($privacy_threshold,$config['PRIVACY_THRESHOLD']) !== 0) {
       $contents = preg_replace("/PRIVACY_THRESHOLD=.*/", "PRIVACY_THRESHOLD=$privacy_threshold", $contents);
-      $contents2 = preg_replace("/PRIVACY_THRESHOLD=.*/", "PRIVACY_THRESHOLD=$privacy_threshold", $contents2);
-      exec('restart_services.sh');
     }
   }
 
@@ -197,7 +141,6 @@ if(isset($_GET['submit'])) {
     $rec_card = $_GET["rec_card"];
     if(strcmp($rec_card,$config['REC_CARD']) !== 0) {
       $contents = preg_replace("/REC_CARD=.*/", "REC_CARD=\"$rec_card\"", $contents);
-      $contents2 = preg_replace("/REC_CARD=.*/", "REC_CARD=\"$rec_card\"", $contents2);
     }
   }
 
@@ -205,7 +148,6 @@ if(isset($_GET['submit'])) {
     $channels = $_GET["channels"];
     if(strcmp($channels,$config['CHANNELS']) !== 0) {
       $contents = preg_replace("/CHANNELS=.*/", "CHANNELS=$channels", $contents);
-      $contents2 = preg_replace("/CHANNELS=.*/", "CHANNELS=$channels", $contents2);
     }
   }
 
@@ -213,7 +155,6 @@ if(isset($_GET['submit'])) {
     $recording_length = $_GET["recording_length"];
     if(strcmp($recording_length,$config['RECORDING_LENGTH']) !== 0) {
       $contents = preg_replace("/RECORDING_LENGTH=.*/", "RECORDING_LENGTH=$recording_length", $contents);
-      $contents2 = preg_replace("/RECORDING_LENGTH=.*/", "RECORDING_LENGTH=$recording_length", $contents2);
     }
   }
 
@@ -221,7 +162,6 @@ if(isset($_GET['submit'])) {
     $extraction_length = $_GET["extraction_length"];
     if(strcmp($extraction_length,$config['EXTRACTION_LENGTH']) !== 0) {
       $contents = preg_replace("/EXTRACTION_LENGTH=.*/", "EXTRACTION_LENGTH=$extraction_length", $contents);
-      $contents2 = preg_replace("/EXTRACTION_LENGTH=.*/", "EXTRACTION_LENGTH=$extraction_length", $contents2);
     }
   }
 
@@ -229,36 +169,30 @@ if(isset($_GET['submit'])) {
     $audiofmt = $_GET["audiofmt"];
     if(strcmp($audiofmt,$config['AUDIOFMT']) !== 0) {
       $contents = preg_replace("/AUDIOFMT=.*/", "AUDIOFMT=$audiofmt", $contents);
-      $contents2 = preg_replace("/AUDIOFMT=.*/", "AUDIOFMT=$audiofmt", $contents2);
     }
   }
   if(isset($_GET["silence_update_indicator"])) {
     $silence_update_indicator = 1;
     if(strcmp($silence_update_indicator,$config['SILENCE_UPDATE_INDICATOR']) !== 0) {
       $contents = preg_replace("/SILENCE_UPDATE_INDICATOR=.*/", "SILENCE_UPDATE_INDICATOR=$silence_update_indicator", $contents);
-      $contents2 = preg_replace("/SILENCE_UPDATE_INDICATOR=.*/", "SILENCE_UPDATE_INDICATOR=$silence_update_indicator", $contents2);
     }
   } else {
     $contents = preg_replace("/SILENCE_UPDATE_INDICATOR=.*/", "SILENCE_UPDATE_INDICATOR=0", $contents);
-    $contents2 = preg_replace("/SILENCE_UPDATE_INDICATOR=.*/", "SILENCE_UPDATE_INDICATOR=0", $contents2);
   }
 
   if(isset($_GET["raw_spectrogram"])) {
     $raw_spectrogram = 1;
     if(strcmp($RAW_SPECTROGRAM,$config['RAW_SPECTROGRAM']) !== 0) {
       $contents = preg_replace("/RAW_SPECTROGRAM=.*/", "RAW_SPECTROGRAM=$raw_spectrogram", $contents);
-      $contents2 = preg_replace("/RAW_SPECTROGRAM=.*/", "RAW_SPECTROGRAM=$raw_spectrogram", $contents2);
     }
   } else {
     $contents = preg_replace("/RAW_SPECTROGRAM=.*/", "RAW_SPECTROGRAM=0", $contents);
-    $contents2 = preg_replace("/RAW_SPECTROGRAM=.*/", "RAW_SPECTROGRAM=0", $contents2);
   }
 
   if(isset($_GET["custom_image"])) {
     $custom_image = $_GET["custom_image"];
     if(strcmp($custom_image,$config['CUSTOM_IMAGE']) !== 0) {
       $contents = preg_replace("/CUSTOM_IMAGE=.*/", "CUSTOM_IMAGE=$custom_image", $contents);
-      $contents2 = preg_replace("/CUSTOM_IMAGE=.*/", "CUSTOM_IMAGE=$custom_image", $contents2);
     }
   }
 
@@ -266,114 +200,44 @@ if(isset($_GET['submit'])) {
     $custom_image_label = $_GET["custom_image_label"];
     if(strcmp($custom_image_label,$config['CUSTOM_IMAGE_TITLE']) !== 0) {
       $contents = preg_replace("/CUSTOM_IMAGE_TITLE=.*/", "CUSTOM_IMAGE_TITLE=\"$custom_image_label\"", $contents);
-      $contents2 = preg_replace("/CUSTOM_IMAGE_TITLE=.*/", "CUSTOM_IMAGE_TITLE=\"$custom_image_label\"", $contents2);
     }
   }
 
-	if (isset($_GET["LogLevel_BirdnetRecordingService"])) {
-		$birdnet_recording_service_log_level = trim($_GET["LogLevel_BirdnetRecordingService"]);
-
-		//If setting exists change it's value
-		if (array_key_exists('LogLevel_BirdnetRecordingService', $config)) {
-			//Setting exists already, see if the value changed
-			if (strcmp($birdnet_recording_service_log_level, $config['LogLevel_BirdnetRecordingService']) !== 0) {
-				$contents = preg_replace("/LogLevel_BirdnetRecordingService=.*/", "LogLevel_BirdnetRecordingService=\"$birdnet_recording_service_log_level\"", $contents);
-				$contents2 = preg_replace("/LogLevel_BirdnetRecordingService=.*/", "LogLevel_BirdnetRecordingService=\"$birdnet_recording_service_log_level\"", $contents2);
-				$fh = fopen("/etc/birdnet/birdnet.conf", "w");
-				$fh2 = fopen("./scripts/thisrun.txt", "w");
-				fwrite($fh, $contents);
-				fwrite($fh2, $contents2);
-				sleep(1);
-				exec("sudo systemctl restart birdnet_recording.service");
-			}
-		} else {
-			//Create the setting in the setting file - same as what update_birdnet_snippets.sh does but will take the users selected log level as the value
-			shell_exec('sudo echo "LogLevel_BirdnetRecordingService=\"' . $birdnet_recording_service_log_level . '\"" >> /etc/birdnet/birdnet.conf');
-			//also update this run txt file
-			shell_exec('sudo echo "LogLevel_BirdnetRecordingService=\"' . $birdnet_recording_service_log_level . '\"" >> ./scripts/thisrun.txt');
-
-			//Reload the config files as we've changed the contents, we need to make sure the contents of the existing variables reflects contents of the config file
-			sleep(1);
-			$contents = file_get_contents('/etc/birdnet/birdnet.conf');
-			$contents2 = file_get_contents('./scripts/thisrun.txt');
-
-			exec("sudo systemctl restart birdnet_recording.service");
-		}
+  if (isset($_GET["LogLevel_BirdnetRecordingService"])) {
+    $birdnet_recording_service_log_level = trim($_GET["LogLevel_BirdnetRecordingService"]);
+	if (strcmp($birdnet_recording_service_log_level, $config['LogLevel_BirdnetRecordingService']) !== 0) {
+		$contents = preg_replace("/LogLevel_BirdnetRecordingService=.*/", "LogLevel_BirdnetRecordingService=\"$birdnet_recording_service_log_level\"", $contents);
 	}
-
-	if (isset($_GET["LogLevel_SpectrogramViewerService"])) {
-		$spectrogram_viewer_service_log_level = trim($_GET["LogLevel_SpectrogramViewerService"]);
-
-		//If setting exists change it's value
-		if (array_key_exists('LogLevel_SpectrogramViewerService', $config)) {
-			//Setting exists already, see if the value changed
-			if (strcmp($spectrogram_viewer_service_log_level, $config['LogLevel_SpectrogramViewerService']) !== 0) {
-				$contents = preg_replace("/LogLevel_SpectrogramViewerService=.*/", "LogLevel_SpectrogramViewerService=\"$spectrogram_viewer_service_log_level\"", $contents);
-				$contents2 = preg_replace("/LogLevel_SpectrogramViewerService=.*/", "LogLevel_SpectrogramViewerService=\"$spectrogram_viewer_service_log_level\"", $contents2);
-				$fh = fopen("/etc/birdnet/birdnet.conf", "w");
-				$fh2 = fopen("./scripts/thisrun.txt", "w");
-				fwrite($fh, $contents);
-				fwrite($fh2, $contents2);
-				sleep(1);
-				exec("sudo systemctl restart spectrogram_viewer.service");
-			}
-		} else {
-			//Create the setting in the setting file - same as what update_birdnet_snippets.sh does but will take the users selected log level as the value
-			shell_exec('sudo echo "LogLevel_SpectrogramViewerService=\"' . $spectrogram_viewer_service_log_level . '\"" >> /etc/birdnet/birdnet.conf');
-			//also update this run txt file
-			shell_exec('sudo echo "LogLevel_SpectrogramViewerService=\"' . $spectrogram_viewer_service_log_level . '\"" >> ./scripts/thisrun.txt');
-
-			//Reload the config files as we've changed the contents, we need to make sure the contents of the existing variables reflects contents of the config file
-			sleep(1);
-			$contents = file_get_contents('/etc/birdnet/birdnet.conf');
-			$contents2 = file_get_contents('./scripts/thisrun.txt');
-
-			exec("sudo systemctl restart spectrogram_viewer.service");
-		}
+  }
+  if (isset($_GET["LogLevel_SpectrogramViewerService"])) {
+    $spectrogram_viewer_service_log_level = trim($_GET["LogLevel_SpectrogramViewerService"]);
+	if (strcmp($birdnet_recording_service_log_level, $config['LogLevel_BirdnetRecordingService']) !== 0) {
+		$contents = preg_replace("/LogLevel_SpectrogramViewerService=.*/", "LogLevel_BirdnetRecordingService=\"$spectrogram_viewer_service_log_level\"", $contents);
 	}
-
-	if (isset($_GET["LogLevel_LiveAudioStreamService"])) {
-		$livestream_audio_service_log_level = trim($_GET["LogLevel_LiveAudioStreamService"]);
-
-		//If setting exists change it's value
-		if (array_key_exists('LogLevel_LiveAudioStreamService', $config)) {
-			//Setting exists already, see if the value changed
-			if (strcmp($livestream_audio_service_log_level, $config['LogLevel_LiveAudioStreamService']) !== 0) {
-				$contents = preg_replace("/LogLevel_LiveAudioStreamService=.*/", "LogLevel_LiveAudioStreamService=\"$livestream_audio_service_log_level\"", $contents);
-				$contents2 = preg_replace("/LogLevel_LiveAudioStreamService=.*/", "LogLevel_LiveAudioStreamService=\"$livestream_audio_service_log_level\"", $contents2);
-				//Write the settings to the config files, so we can restart the relevant services
-				$fh = fopen("/etc/birdnet/birdnet.conf", "w");
-				$fh2 = fopen("./scripts/thisrun.txt", "w");
-				fwrite($fh, $contents);
-				fwrite($fh2, $contents2);
-				sleep(1);
-				exec("sudo systemctl restart livestream.service && sudo systemctl restart icecast2.service");
-			}
-		} else {
-			//Create the setting in the setting file - same as what update_birdnet_snippets.sh does but will take the users selected log level as the value
-			shell_exec('sudo echo "LogLevel_LiveAudioStreamService=\"' . $livestream_audio_service_log_level . '\"" >> /etc/birdnet/birdnet.conf');
-			//also update this run txt file
-			shell_exec('sudo echo "LogLevel_LiveAudioStreamService=\"' . $livestream_audio_service_log_level . '\"" >> ./scripts/thisrun.txt');
-
-			//Reload the config files as we've changed the contents, we need to make sure the contents of the existing variables reflects contents of the config file
-			sleep(1);
-			$contents = file_get_contents('/etc/birdnet/birdnet.conf');
-			$contents2 = file_get_contents('./scripts/thisrun.txt');
-
-			exec("sudo systemctl restart livestream.service && sudo systemctl restart icecast2.service");
-		}
+  }
+  if (isset($_GET["LogLevel_LiveAudioStreamService"])) {
+    $livestream_audio_service_log_level = trim($_GET["LogLevel_LiveAudioStreamService"]);
+	if (strcmp($birdnet_recording_service_log_level, $config['LogLevel_LiveAudioStreamService']) !== 0) {
+		$contents = preg_replace("/LogLevel_LiveAudioStreamService=.*/", "LogLevel_LiveAudioStreamService=\"$livestream_audio_service_log_level\"", $contents);
+		$restart_livestream = True;
 	}
+  }
 
-	//Finally write the data out. some sections do this themselves in order to have the new settings ready for the services that will be restarted
-	//but will doubly ensure the settings are saved after any modification
-	$fh = fopen('/etc/birdnet/birdnet.conf', "w");
-	$fh2 = fopen("./scripts/thisrun.txt", "w");
-	fwrite($fh, $contents);
-	fwrite($fh2, $contents2);
+  //Finally write the data out. some sections do this themselves in order to have the new settings ready for the services that will be restarted
+  //but will doubly ensure the settings are saved after any modification
+  $fh = fopen('/etc/birdnet/birdnet.conf', "w");
+  fwrite($fh, $contents);
+  $config = get_config($force_reload=true);
+
+  syslog(LOG_INFO, "Restarting Services");
+  if ($update_caddyfile){
+      exec('sudo /usr/local/bin/update_caddyfile.sh > /dev/null 2>&1 &');
+  }
+  shell_exec("sudo restart_services.sh");
+  if ($restart_livestream) {
+    exec("sudo systemctl restart livestream.service");
+  }
 }
-
-$user = trim(shell_exec("awk -F: '/1000/{print $1}' /etc/passwd"));
-$home = trim(shell_exec("awk -F: '/1000/{print $6}' /etc/passwd"));
 
 $count_labels = count(file($home."/BirdNET-Pi/model/labels.txt"));
 $count = $count_labels;
@@ -385,11 +249,7 @@ $count = $count_labels;
 <div class="settings">
 
 <?php
-if (file_exists('./scripts/thisrun.txt')) {
-  $newconfig = parse_ini_file('./scripts/thisrun.txt');
-} elseif (file_exists('./scripts/firstrun.ini')) {
-  $newconfig = parse_ini_file('./scripts/firstrun.ini');
-}
+$newconfig = get_config();
 ?>
       <div class="brbanner"><h1>Advanced Settings</h1></div><br>
     <form action="" method="GET">
@@ -407,10 +267,10 @@ if (file_exists('./scripts/thisrun.txt')) {
       // Update the current slider value (each time you drag the slider handle)
       slider.oninput = function() {
         output.innerHTML = this.value;
-        document.getElementById("predictionCount").innerHTML = parseInt((this.value * <?php echo $count; ?>)/100);
+        document.getElementById("predictionCount").innerHTML = parseInt(Math.max(10, (this.value * <?php echo $count; ?>)/100));
       }
       </script>
-      <p>If a Human is predicted anywhere among the top <span id="predictionCount"><?php echo $newconfig['PRIVACY_THRESHOLD'] == 0 ? "threshold % of" : intval(($newconfig['PRIVACY_THRESHOLD'] * $count)/100); ?></span> predictions, the sample will be considered of human origin and no data will be collected. Start with 1% and move up as needed.</p>
+      <p>If a Human is predicted anywhere among the top <span id="predictionCount"><?php echo intval(max(10, ($newconfig['PRIVACY_THRESHOLD'] * $count)/100)); ?></span> predictions, the sample will be considered of human origin and no data will be collected. Start with 1% and move up as needed.</p>
       </td></tr></table><br>
       
       <table class="settingstable"><tr><td>
@@ -425,16 +285,16 @@ if (file_exists('./scripts/thisrun.txt')) {
 
       <h2>Audio Settings</h2>
       <label for="rec_card">Audio Card: </label>
-      <input name="rec_card" type="text" value="<?php print($newconfig['REC_CARD']);?>" required/><br>
+      <input name="rec_card" type="text" size="12" value="<?php print($newconfig['REC_CARD']);?>" required/><br>
       <p>Set Audio Card to 'default' to use PulseAudio (always recommended), or an ALSA recognized sound card device from the output of `arecord -L`. Choose the `dsnoop` device if it is available</p>
       <label for="channels">Audio Channels: </label>
-      <input name="channels" type="number" min="1" max="32" step="1" value="<?php print($newconfig['CHANNELS']);?>" required/><br>
+      <input name="channels" type="number" style="width:3em;" min="1" max="32" step="1" value="<?php print($newconfig['CHANNELS']);?>" required/><br>
       <p>Set Channels to the number of channels supported by your sound card. 32 max.</p>
       <label for="recording_length">Recording Length: </label>
-      <input name="recording_length" oninput="document.getElementsByName('extraction_length')[0].setAttribute('max', this.value);" type="number" min="3" max="60" step="1" value="<?php print($newconfig['RECORDING_LENGTH']);?>" required/><br>
+      <input name="recording_length" oninput="document.getElementsByName('extraction_length')[0].setAttribute('max', this.value);" type="number" style="width:3em;" min="3" max="60" step="1" value="<?php print($newconfig['RECORDING_LENGTH']);?>" required/><br>
       <p>Set Recording Length in seconds between 6 and 60. Multiples of 3 are recommended, as BirdNET analyzes in 3-second chunks.</p> 
       <label for="extraction_length">Extraction Length: </label>
-      <input name="extraction_length" oninput="this.setAttribute('max', document.getElementsByName('recording_length')[0].value);" type="number" min="3" value="<?php print($newconfig['EXTRACTION_LENGTH']);?>" /><br>
+      <input name="extraction_length" oninput="this.setAttribute('max', document.getElementsByName('recording_length')[0].value);" type="number" style="width:3em;" min="3" value="<?php print($newconfig['EXTRACTION_LENGTH']);?>" /><br>
       <p>Set Extraction Length to something less than your Recording Length. Min=3 Max=Recording Length</p>
       <label for="audiofmt">Extractions Audio Format</label>
       <select name="audiofmt">
@@ -576,17 +436,17 @@ foreach($formats as $format){
 
       <p>
         <label for="overlap">Overlap: </label>
-        <input name="overlap" type="number" min="0.0" max="2.9" step="0.1" value="<?php print($newconfig['OVERLAP']);?>" required/><br>
+        <input name="overlap" type="number" style="width:4em;" min="0.0" max="2.9" step="0.1" value="<?php print($newconfig['OVERLAP']);?>" required/><br>
   &nbsp;&nbsp;&nbsp;&nbsp;Min=0.0, Max=2.9
       </p>
       <p>
         <label for="confidence">Minimum Confidence: </label>
-        <input name="confidence" type="number" min="0.01" max="0.99" step="0.01" value="<?php print($newconfig['CONFIDENCE']);?>" required/><br>
+        <input name="confidence" type="number" style="width:4em;" min="0.01" max="0.99" step="0.01" value="<?php print($newconfig['CONFIDENCE']);?>" required/><br>
         &nbsp;&nbsp;&nbsp;&nbsp;Min=0.01, Max=0.99
       </p>
       <p>
         <label for="sensitivity">Sigmoid Sensitivity: </label>
-        <input name="sensitivity" type="number" min="0.5" max="1.5" step="0.01" value="<?php print($newconfig['SENSITIVITY']);?>" required/><br>
+        <input name="sensitivity" type="number" style="width:4em;" min="0.5" max="1.5" step="0.01" value="<?php print($newconfig['SENSITIVITY']);?>" required/><br>
   &nbsp;&nbsp;&nbsp;&nbsp;Min=0.5, Max=1.5
       </p>
       </td></tr></table><br>
@@ -619,20 +479,20 @@ foreach($formats as $format){
         Using ffmpeg:
         e.g. origin=6000, target=4000, performs a shift of 2000 Hz down.<br>
         <label for="freqshift_hi">Origin [Hz]: </label>
-        <input name="freqshift_hi" type="number" min="0" max="20000" step="1" value="<?php print($newconfig['FREQSHIFT_HI']);?>" required/><br>
+        <input name="freqshift_hi" type="number" style="width:5em;" min="0" max="20000" step="1" value="<?php print($newconfig['FREQSHIFT_HI']);?>" required/><br>
         <label for="freqshift_lo">Target [Hz]: </label>
-        <input name="freqshift_lo" type="number" min="0" max="20000" step="1" value="<?php print($newconfig['FREQSHIFT_LO']);?>" required/>
+        <input name="freqshift_lo" type="number" style="width:5em;" min="0" max="20000" step="1" value="<?php print($newconfig['FREQSHIFT_LO']);?>" required/>
         </p>
         <p style="margin-left: 40px">
         <label for="freqshift_reconnect_delay">Livestream reconnection delay (in ms): </label>
-        <input name="freqshift_reconnect_delay" type="number" min="1000" max="10000" step="100" value="<?php print($newconfig['FREQSHIFT_RECONNECT_DELAY']);?>" required/>
+        <input name="freqshift_reconnect_delay" type="number" style="width:5em;" min="1000" max="10000" step="100" value="<?php print($newconfig['FREQSHIFT_RECONNECT_DELAY']);?>" required/>
         </p>
 
         <p style="margin-left: 40px">
         Using sox:
         e.g. shiftPitch=-1200 performs a shift of 1 octave down. This value is in 100ths of a semitone.<br>
         <label for="freqshift_pitch">Pitch shift: </label>
-        <input name="freqshift_pitch" type="number" min="-4000" max="4000" step="1" value="<?php print($newconfig['FREQSHIFT_PITCH']);?>" required/><br>
+        <input name="freqshift_pitch" type="number" style="width:6em;" min="-4000" max="4000" step="1" value="<?php print($newconfig['FREQSHIFT_PITCH']);?>" required/><br>
         </p>
 		</td></tr></table><br>
 
@@ -716,6 +576,7 @@ foreach($formats as $format){
         </table>
       <br><br>
       <input type="hidden" name="view" value="Advanced">
+<div class="float">
       <button onclick="if(<?php print($newconfig['PRIVACY_THRESHOLD']);?> != document.getElementById('privacy_threshold').value){return confirm('This will take about 90 seconds.')} collectrtspUrls();" type="submit" name="submit" value="advanced">
 <?php
 if(isset($_GET['submit'])){
@@ -724,10 +585,11 @@ if(isset($_GET['submit'])){
   echo "Update Settings";
 }
 ?>
-      </button>
-      <br>
+      </button></div>
       </form>
       <form action="" method="GET">
+<div class="float">
         <button type="submit" name="view" value="Settings">Basic Settings</button>
+</div>
       </form>
 </div>

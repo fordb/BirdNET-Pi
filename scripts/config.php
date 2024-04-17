@@ -1,35 +1,20 @@
 <?php
 error_reporting(E_ERROR);
 ini_set('display_errors',1);
+define('__ROOT__', dirname(dirname(__FILE__)));
+require_once(__ROOT__.'/scripts/common.php');
 
-$user = shell_exec("awk -F: '/1000/{print $1}' /etc/passwd");
-$home = shell_exec("awk -F: '/1000/{print $6}' /etc/passwd");
-$home = trim($home);
-if (file_exists($home.'/BirdNET-Pi/scripts/thisrun.txt')) {
-  $config = parse_ini_file($home.'/BirdNET-Pi/scripts/thisrun.txt');
-} elseif (file_exists($home.'/BirdNET-Pi/scripts/thisrun.ini')) {
-  $config = parse_ini_file($home.'/BirdNET-Pi/scripts/thisrun.ini');
-}
+$user = get_user();
+$home = get_home();
+$config = get_config();
+set_timezone();
+
+ensure_authenticated();
+
 if (file_exists($home."/BirdNET-Pi/apprise.txt")) {
   $apprise_config = file_get_contents($home."/BirdNET-Pi/apprise.txt");
 } else {
   $apprise_config = "";
-}
-$caddypwd = $config['CADDY_PWD'];
-if (!isset($_SERVER['PHP_AUTH_USER'])) {
-  header('WWW-Authenticate: Basic realm="My Realm"');
-  header('HTTP/1.0 401 Unauthorized');
-  echo '<table><tr><td>You cannot edit the settings for this installation</td></tr></table>';
-  exit;
-} else {
-  $submittedpwd = $_SERVER['PHP_AUTH_PW'];
-  $submitteduser = $_SERVER['PHP_AUTH_USER'];
-  if($submittedpwd !== $caddypwd || $submitteduser !== 'birdnet'){
-    header('WWW-Authenticate: Basic realm="My Realm"');
-    header('HTTP/1.0 401 Unauthorized');
-    echo '<table><tr><td>You cannot edit the settings for this installation</td></tr></table>';
-    exit;
-  }
 }
 
 function syslog_shell_exec($cmd, $sudo_user = null) {
@@ -49,9 +34,6 @@ if(isset($_GET['threshold'])) {
     die('Invalid threshold value');
   }
 
-  $user = trim(shell_exec("awk -F: '/1000/{print $1}' /etc/passwd"));
-  $home = trim(shell_exec("awk -F: '/1000/{print $6}' /etc/passwd"));
-
   $command = "sudo -u $user ".$home."/BirdNET-Pi/birdnet/bin/python3 ".$home."/BirdNET-Pi/scripts/species.py --threshold $threshold 2>&1";
 
   $output = shell_exec($command);
@@ -61,7 +43,7 @@ if(isset($_GET['threshold'])) {
 }
 
 if(isset($_GET['restart_php']) && $_GET['restart_php'] == "true") {
-  shell_exec("sudo service php7.4-fpm restart");
+  shell_exec("sudo service php*-fpm restart");
   die();
 }
 
@@ -83,6 +65,11 @@ if(isset($_GET["latitude"])){
   $timezone = $_GET["timezone"];
   $model = $_GET["model"];
   $sf_thresh = $_GET["sf_thresh"];
+  if(isset($_GET['data_model_version'])) {
+    $data_model_version = 2;
+  } else {
+    $data_model_version = 1;
+  }
   $only_notify_species_names = $_GET['only_notify_species_names'];
   $only_notify_species_names_2 = $_GET['only_notify_species_names_2'];
 
@@ -109,6 +96,7 @@ if(isset($_GET["latitude"])){
 
   if(isset($timezone) && in_array($timezone, DateTimeZone::listIdentifiers())) {
     shell_exec("sudo timedatectl set-timezone ".$timezone);
+    $_SESSION['my_timezone'] = $timezone;
     date_default_timezone_set($timezone);
     echo "<script>setTimeout(
     function() {
@@ -135,17 +123,8 @@ if(isset($_GET["latitude"])){
       sleep(3);
     }
   }
-
-  if (file_exists($home.'/BirdNET-Pi/scripts/thisrun.txt')) {
-    $lang_config = parse_ini_file($home.'/BirdNET-Pi/scripts/thisrun.txt');
-  } elseif (file_exists($home.'/BirdNET-Pi/scripts/thisrun.ini')) {
-    $lang_config = parse_ini_file($home.'/BirdNET-Pi/scripts/thisrun.ini');
-  }
-
-  if ($model != $lang_config['MODEL'] || $language != $lang_config['DATABASE_LANG']){
+  if ($model != $config['MODEL'] || $language != $config['DATABASE_LANG']){
     if(strlen($language) == 2){
-      $user = trim(shell_exec("awk -F: '/1000/{print $1}' /etc/passwd"));
-      $home = trim(shell_exec("awk -F: '/1000/{print $6}' /etc/passwd"));
 
       // Archive old language file
       syslog_shell_exec("cp -f $home/BirdNET-Pi/model/labels.txt $home/BirdNET-Pi/model/labels.txt.old", $user);
@@ -168,7 +147,7 @@ if(isset($_GET["latitude"])){
   $contents = preg_replace("/LONGITUDE=.*/", "LONGITUDE=$longitude", $contents);
   $contents = preg_replace("/BIRDWEATHER_ID=.*/", "BIRDWEATHER_ID=$birdweather_id", $contents);
   $contents = preg_replace("/APPRISE_NOTIFICATION_TITLE=.*/", "APPRISE_NOTIFICATION_TITLE=\"$apprise_notification_title\"", $contents);
-  $contents = preg_replace("/APPRISE_NOTIFICATION_BODY=.*/", "APPRISE_NOTIFICATION_BODY='$apprise_notification_body'", $contents);
+  $contents = preg_replace("/APPRISE_NOTIFICATION_BODY=.*/", "APPRISE_NOTIFICATION_BODY=\"$apprise_notification_body\"", $contents);
   $contents = preg_replace("/APPRISE_NOTIFY_EACH_DETECTION=.*/", "APPRISE_NOTIFY_EACH_DETECTION=$apprise_notify_each_detection", $contents);
   $contents = preg_replace("/APPRISE_NOTIFY_NEW_SPECIES=.*/", "APPRISE_NOTIFY_NEW_SPECIES=$apprise_notify_new_species", $contents);
   $contents = preg_replace("/APPRISE_NOTIFY_NEW_SPECIES_EACH_DAY=.*/", "APPRISE_NOTIFY_NEW_SPECIES_EACH_DAY=$apprise_notify_new_species_each_day", $contents);
@@ -179,30 +158,9 @@ if(isset($_GET["latitude"])){
   $contents = preg_replace("/APPRISE_MINIMUM_SECONDS_BETWEEN_NOTIFICATIONS_PER_SPECIES=.*/", "APPRISE_MINIMUM_SECONDS_BETWEEN_NOTIFICATIONS_PER_SPECIES=$minimum_time_limit", $contents);
   $contents = preg_replace("/MODEL=.*/", "MODEL=$model", $contents);
   $contents = preg_replace("/SF_THRESH=.*/", "SF_THRESH=$sf_thresh", $contents);
+  $contents = preg_replace("/DATA_MODEL_VERSION=.*/", "DATA_MODEL_VERSION=$data_model_version", $contents);
   $contents = preg_replace("/APPRISE_ONLY_NOTIFY_SPECIES_NAMES=.*/", "APPRISE_ONLY_NOTIFY_SPECIES_NAMES=\"$only_notify_species_names\"", $contents);
   $contents = preg_replace("/APPRISE_ONLY_NOTIFY_SPECIES_NAMES_2=.*/", "APPRISE_ONLY_NOTIFY_SPECIES_NAMES_2=\"$only_notify_species_names_2\"", $contents);
-
-  $contents2 = file_get_contents($home."/BirdNET-Pi/scripts/thisrun.txt");
-  $contents2 = preg_replace("/SITE_NAME=.*/", "SITE_NAME=\"$site_name\"", $contents2);
-  $contents2 = preg_replace("/LATITUDE=.*/", "LATITUDE=$latitude", $contents2);
-  $contents2 = preg_replace("/LONGITUDE=.*/", "LONGITUDE=$longitude", $contents2);
-  $contents2 = preg_replace("/BIRDWEATHER_ID=.*/", "BIRDWEATHER_ID=$birdweather_id", $contents2);
-  $contents2 = preg_replace("/APPRISE_NOTIFICATION_TITLE=.*/", "APPRISE_NOTIFICATION_TITLE=\"$apprise_notification_title\"", $contents2);
-  $contents2 = preg_replace("/APPRISE_NOTIFICATION_BODY=.*/", "APPRISE_NOTIFICATION_BODY='$apprise_notification_body'", $contents2);
-  $contents2 = preg_replace("/APPRISE_NOTIFY_EACH_DETECTION=.*/", "APPRISE_NOTIFY_EACH_DETECTION=$apprise_notify_each_detection", $contents2);
-  $contents2 = preg_replace("/APPRISE_NOTIFY_NEW_SPECIES=.*/", "APPRISE_NOTIFY_NEW_SPECIES=$apprise_notify_new_species", $contents2);
-  $contents2 = preg_replace("/APPRISE_NOTIFY_NEW_SPECIES_EACH_DAY=.*/", "APPRISE_NOTIFY_NEW_SPECIES_EACH_DAY=$apprise_notify_new_species_each_day", $contents2);
-  $contents2 = preg_replace("/APPRISE_WEEKLY_REPORT=.*/", "APPRISE_WEEKLY_REPORT=$apprise_weekly_report", $contents2);
-  $contents2 = preg_replace("/FLICKR_API_KEY=.*/", "FLICKR_API_KEY=$flickr_api_key", $contents2);
-  $contents2 = preg_replace("/DATABASE_LANG=.*/", "DATABASE_LANG=$language", $contents2);
-  $contents2 = preg_replace("/FLICKR_FILTER_EMAIL=.*/", "FLICKR_FILTER_EMAIL=$flickr_filter_email", $contents2);
-  $contents2 = preg_replace("/APPRISE_MINIMUM_SECONDS_BETWEEN_NOTIFICATIONS_PER_SPECIES=.*/", "APPRISE_MINIMUM_SECONDS_BETWEEN_NOTIFICATIONS_PER_SPECIES=$minimum_time_limit", $contents2);
-  $contents2 = preg_replace("/MODEL=.*/", "MODEL=$model", $contents2);
-  $contents2 = preg_replace("/SF_THRESH=.*/", "SF_THRESH=$sf_thresh", $contents2);
-  $contents2 = preg_replace("/APPRISE_ONLY_NOTIFY_SPECIES_NAMES=.*/", "APPRISE_ONLY_NOTIFY_SPECIES_NAMES=\"$only_notify_species_names\"", $contents2);
-  $contents2 = preg_replace("/APPRISE_ONLY_NOTIFY_SPECIES_NAMES_2=.*/", "APPRISE_ONLY_NOTIFY_SPECIES_NAMES_2=\"$only_notify_species_names_2\"", $contents2);
-
-
 
   if($site_name != $config["SITE_NAME"]) {
     echo "<script>setTimeout(
@@ -212,17 +170,12 @@ if(isset($_GET["latitude"])){
   }
 
   $fh = fopen("/etc/birdnet/birdnet.conf", "w");
-  $fh2 = fopen($home."/BirdNET-Pi/scripts/thisrun.txt", "w");
   fwrite($fh, $contents);
-  fwrite($fh2, $contents2);
 
   if(isset($apprise_input)){
-    $user = shell_exec("awk -F: '/1000/{print $1}' /etc/passwd");
-    $home = shell_exec("awk -F: '/1000/{print $6}' /etc/passwd");
-    $home = trim($home);
-
     $appriseconfig = fopen($home."/BirdNET-Pi/apprise.txt", "w");
     fwrite($appriseconfig, $apprise_input);
+    $apprise_config = $apprise_input;
   }
 
   syslog(LOG_INFO, "Restarting Services");
@@ -230,16 +183,8 @@ if(isset($_GET["latitude"])){
 }
 
 if(isset($_GET['sendtest']) && $_GET['sendtest'] == "true") {
-  $user = shell_exec("awk -F: '/1000/{print $1}' /etc/passwd");
-  $home = shell_exec("awk -F: '/1000/{print $6}' /etc/passwd");
-  $home = trim($home);
-  if (file_exists($home.'/BirdNET-Pi/scripts/thisrun.txt')) {
-    $config = parse_ini_file($home.'/BirdNET-Pi/scripts/thisrun.txt');
-  } elseif (file_exists($home.'/BirdNET-Pi/scripts/thisrun.ini')) {
-    $config = parse_ini_file($home.'/BirdNET-Pi/scripts/thisrun.ini');
-  }
-
-  $db = new SQLite3($home."/BirdNET-Pi/scripts/birds.db", SQLITE3_OPEN_CREATE | SQLITE3_OPEN_READWRITE);
+  $db = new SQLite3($home."/BirdNET-Pi/scripts/birds.db", SQLITE3_OPEN_READONLY);
+  $db->busyTimeout(1000);
 
   $cf = explode("\n",$_GET['apprise_config']);
   $cf = "'".implode("' '", $cf)."'";
@@ -268,7 +213,7 @@ if(isset($_GET['sendtest']) && $_GET['sendtest'] == "true") {
   if($config["BIRDNETPI_URL"] != "") {
     $filename = $config["BIRDNETPI_URL"]."?filename=".$filename;
   } else{
-    $filename = "http://birdnetpi.local/"."?filename=".$filename;
+    $filename = "http://".$_SERVER['SERVER_NAME']."/"."?filename=".$filename;
   }
 
   $attach="";
@@ -294,6 +239,7 @@ if(isset($_GET['sendtest']) && $_GET['sendtest'] == "true") {
   $title = str_replace("\$sens", $sens, $title);
   $title = str_replace("\$overlap", $overlap, $title);
   $title = str_replace("\$flickrimage", $exampleimage, $title);
+  $title = str_replace("\$reason", 'Test message', $title);
 
   $body = str_replace("\$sciname", $sciname, $body);
   $body = str_replace("\$comname", $comname, $body);
@@ -309,18 +255,19 @@ if(isset($_GET['sendtest']) && $_GET['sendtest'] == "true") {
   $body = str_replace("\$sens", $sens, $body);
   $body = str_replace("\$overlap", $overlap, $body);
   $body = str_replace("\$flickrimage", $exampleimage, $body);
+  $body = str_replace("\$reason", 'Test message', $body);
 
-  echo "<pre class=\"bash\">".shell_exec($home."/BirdNET-Pi/birdnet/bin/apprise -vv --plugin-path ".$home."/.apprise/plugins "." -t '".escapeshellcmd($title)."' -b '".escapeshellcmd($body)."' ".$attach." ".$cf." ")."</pre>";
+  $temp = tmpfile();
+  $tpath = stream_get_meta_data($temp)['uri'];
+  fwrite($temp, $body);
+  echo "<pre class=\"bash\">".shell_exec($home."/BirdNET-Pi/birdnet/bin/apprise -vv --plugin-path ".$home."/.apprise/plugins "." -t '".escapeshellcmd($title)."' ".$attach." ".$cf." <".$tpath)."</pre>";
+  fclose($temp);
 
   die();
 }
 
 // have to get the config again after we change the variables, so the UI reflects the changes too
-if (file_exists($home.'/BirdNET-Pi/scripts/thisrun.txt')) {
-  $config = parse_ini_file($home.'/BirdNET-Pi/scripts/thisrun.txt');
-} elseif (file_exists($home.'/BirdNET-Pi/scripts/thisrun.ini')) {
-  $config = parse_ini_file($home.'/BirdNET-Pi/scripts/thisrun.ini');
-}
+$config = get_config($force_reload=true);
 ?>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
@@ -379,8 +326,10 @@ function sendTestNotification(e) {
       </select>
       <br>
       <span <?php if($config['MODEL'] == "BirdNET_6K_GLOBAL_MODEL") { ?>style="display: none"<?php } ?> id="soft">
+      <input type="checkbox" name="data_model_version" <?php if($config['DATA_MODEL_VERSION'] == 2) { echo "checked"; };?> >
+      <label for="data_model_version">Species range model V2.4 - V2</label>  [ <a target="_blank" href="https://github.com/kahst/BirdNET-Analyzer/discussions/234">Info here</a> ]<br>
       <label for="sf_thresh">Species Occurence Frequency Threshold [0.0005, 0.99]: </label>
-      <input name="sf_thresh" type="number" max="0.99" min="0.0005" step="any" value="<?php print($config['SF_THRESH']);?>"/> <span onclick="document.getElementById('sfhelp').style.display='unset'" style="text-decoration:underline;cursor:pointer">[more info]</span><br>
+      <input name="sf_thresh" type="number" style="width:5em;" max="0.99" min="0.0005" step="any" value="<?php print($config['SF_THRESH']);?>"/> <span onclick="document.getElementById('sfhelp').style.display='unset'" style="text-decoration:underline;cursor:pointer">[more info]</span><br>
       <p id="sfhelp" style='display:none'>This value is used by the model to constrain the list of possible species that it will try to detect, given the minimum occurence frequency. A 0.03 threshold means that for a species to be included in this list, it needs to, on average, be seen on at least 3% of historically submitted eBird checklists for your given lat/lon/current week of year. So, the lower the threshold, the rarer the species it will include.<br><img style='width:75%;padding-top:5px;padding-bottom:5px' alt="BirdNET-Pi new model detection flowchart" title="BirdNET-Pi new model detection flowchart" src="https://i.imgur.com/8YEAuSA.jpeg">
         <br>If you'd like to tinker with this threshold value and see which species make it onto the list, <?php if($config['MODEL'] == "BirdNET_6K_GLOBAL_MODEL"){ ?>please click "Update Settings" at the very bottom of this page to install the appropriate label file, then come back here and you'll be able to use the Species List Tester.<?php } else { ?>you can use this tool: <button type="button" class="testbtn" id="openModal">Species List Tester</button><?php } ?></p>
       </span>
@@ -494,23 +443,33 @@ function runProcess() {
 
       <table class="settingstable"><tr><td>
       <h2>Location</h2>
-      <label for="site_name">Site Name: </label>
-      <input name="site_name" type="text" value="<?php print($config['SITE_NAME']);?>"/> (Optional)<br>
-      <label for="latitude">Latitude: &nbsp; &nbsp;</label>
-      <input name="latitude" type="number" max="90" min="-90" step="0.0001" value="<?php print($config['LATITUDE']);?>" required/><br>
-      <label for="longitude">Longitude: </label>
-      <input name="longitude" type="number" max="180" min="-180" step="0.0001" value="<?php print($config['LONGITUDE']);?>" required/><br>
+      <table class="settingstable plaintable">
+        <tr>
+          <td><label for="site_name">Site Name:</label></td>
+          <td><input name="site_name" type="text" value="<?php print($config['SITE_NAME']);?>"/></td>
+          <td>(Optional)</td>
+        </tr>
+        <tr>
+          <td><label for="latitude">Latitude:</label></td>
+          <td><input name="latitude" type="number" style="width:6em;" max="90" min="-90" step="0.0001" value="<?php print($config['LATITUDE']);?>" required/></td>
+        </tr>
+        <tr>
+          <td><label for="longitude">Longitude: </label></td>
+          <td><input name="longitude" type="number" style="width:6em;" max="180" min="-180" step="0.0001" value="<?php print($config['LONGITUDE']);?>" required/></td>
+          <td></td>
+        </tr>
+      </table>
       <p>Set your Latitude and Longitude to 4 decimal places. Get your coordinates <a href="https://latlong.net" target="_blank">here</a>.</p>
       </td></tr></table><br>
       <table class="settingstable"><tr><td>
       <h2>BirdWeather</h2>
       <label for="birdweather_id">BirdWeather ID: </label>
       <input name="birdweather_id" type="text" value="<?php print($config['BIRDWEATHER_ID']);?>" /><br>
-      <p><a href="https://app.birdweather.com" target="_blank">BirdWeather.com</a> is a weather map for bird sounds. Stations around the world supply audio and video streams to BirdWeather where they are then analyzed by BirdNET and compared to eBird Grid data. BirdWeather catalogues the bird audio and spectrogram visualizations so that you can listen to, view, and read about birds throughout the world. <a href="mailto:tim@birdweather.com?subject=Request%20BirdWeather%20ID&body=<?php include($home.'/BirdNET-Pi/scripts/birdweather_request.php'); ?>" target="_blank">Email Tim</a> to request a BirdWeather ID</p>
+      <p><a href="https://app.birdweather.com" target="_blank">BirdWeather.com</a> is a weather map for bird sounds. Stations around the world supply audio and video streams to BirdWeather where they are then analyzed by BirdNET and compared to eBird Grid data. BirdWeather catalogues the bird audio and spectrogram visualizations so that you can listen to, view, and read about birds throughout the world. <a href="mailto:birdnetpi@birdweather.com?subject=Request%20BirdWeather%20ID&body=<?php include($home.'/BirdNET-Pi/scripts/birdweather_request.php'); ?>" target="_blank">Email Tim</a> to request a BirdWeather ID</p>
       </td></tr></table><br>
       <table class="settingstable" style="width:100%"><tr><td>
       <h2>Notifications</h2>
-      <p><a target="_blank" href="https://github.com/caronc/apprise/wiki">Apprise Notifications</a> can be setup and enabled for 70+ notification services. Each service should be on its own line.</p>
+      <p><a target="_blank" href="https://github.com/caronc/apprise/wiki">Apprise Notifications</a> can be setup and enabled for 90+ notification services. Each service should be on its own line.</p>
       <label for="apprise_input">Apprise Notifications Configuration: </label><br>
       <textarea placeholder="mailto://{user}:{password}@gmail.com
 tgram://{bot_token}/{chat_id}
@@ -546,6 +505,8 @@ https://discordapp.com/api/webhooks/{WebhookID}/{WebhookToken}
       <dd>Overlap set in "Advanced Settings"</dd>
       <dt>$flickrimage</dt>
       <dd>A preview image of the detected species from Flickr. Set your API key below.</dd>
+      <dt>$reason</dt>
+      <dd>The reason a notification was sent</dd>
       </dl>
       <p>Use the variables defined above to customize your notification title and body.</p>
       <label for="apprise_notification_title">Notification Title: </label>
@@ -563,7 +524,7 @@ https://discordapp.com/api/webhooks/{WebhookID}/{WebhookToken}
 
       <hr>
       <label for="minimum_time_limit">Minimum time between notifications of the same species (sec):</label>
-      <input type="number" id="minimum_time_limit" name="minimum_time_limit" value="<?php echo $config['APPRISE_MINIMUM_SECONDS_BETWEEN_NOTIFICATIONS_PER_SPECIES'];?>" min="0"><br>
+      <input type="number" id="minimum_time_limit" name="minimum_time_limit" value="<?php echo $config['APPRISE_MINIMUM_SECONDS_BETWEEN_NOTIFICATIONS_PER_SPECIES'];?>" style="width:6em;" min="0"><br>
       <label for="only_notify_species_names">Exclude these species (comma separated common names):</label>
       <input type="text" id="only_notify_species_names" placeholder="Mourning Dove,American Crow" name="only_notify_species_names" value="<?php echo $config['APPRISE_ONLY_NOTIFY_SPECIES_NAMES'];?>" size=96><br>
       <label for="only_notify_species_names_2">ONLY notify for these species (comma separated common names):</label>
@@ -577,7 +538,7 @@ https://discordapp.com/api/webhooks/{WebhookID}/{WebhookToken}
       <table class="settingstable"><tr><td>
       <h2>Bird Photos from Flickr</h2>
       <label for="flickr_api_key">Flickr API Key: </label>
-      <input name="flickr_api_key" type="text" value="<?php print($config['FLICKR_API_KEY']);?>"/><br>
+      <input name="flickr_api_key" type="text" size="32" value="<?php print($config['FLICKR_API_KEY']);?>"/><br>
       <label for="flickr_filter_email">Only search photos from this Flickr user: </label>
       <input name="flickr_filter_email" type="email" placeholder="myflickraccount@gmail.com" value="<?php print($config['FLICKR_FILTER_EMAIL']);?>"/><br>
       <p>Set your Flickr API key to enable the display of bird images next to detections. <a target="_blank" href="https://www.flickr.com/services/api/misc.api_keys.html">Get your free key here.</a></p>
@@ -675,7 +636,7 @@ https://discordapp.com/api/webhooks/{WebhookID}/{WebhookToken}
         Select a timezone
       </option>
       <?php
-      $current_timezone = trim(shell_exec("cat /etc/timezone"));
+      $current_timezone = trim(shell_exec("timedatectl show --value --property=Timezone"));
       $timezone_identifiers = DateTimeZone::listIdentifiers(DateTimeZone::ALL);
         
       $n = 425;
@@ -694,6 +655,7 @@ https://discordapp.com/api/webhooks/{WebhookID}/{WebhookToken}
 
       <input type="hidden" name="status" value="success">
       <input type="hidden" name="submit" value="settings">
+<div class="float">
       <button type="submit" id="basicformsubmit" onclick="if(document.getElementById('basicform').checkValidity()){this.innerHTML = 'Updating... please wait.';this.classList.add('disabled')}" name="view" value="Settings">
 <?php
 if(isset($_GET['status'])){
@@ -702,10 +664,10 @@ if(isset($_GET['status'])){
   echo "Update Settings";
 }
 ?>
-      </button>
+      </button></div>
       </form>
       <form action="" method="GET">
+      <div class="float">
         <button type="submit" name="view" value="Advanced">Advanced Settings</button>
-      </form>
+      </div></form>
 </div>
-

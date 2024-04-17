@@ -12,7 +12,19 @@ from sqlite3 import Connection
 import plotly.express as px
 from sklearn.preprocessing import normalize
 from suntime import Sun
-from datetime import datetime
+from utils.helpers import get_settings
+
+profile = False
+if profile:
+    try:
+        from pyinstrument import Profiler
+    except ImportError as e:
+        print(e)
+        profile = False
+    else:
+        profiler = Profiler()
+        profiler.start()
+
 
 pio.templates.default = "plotly_white"
 
@@ -45,25 +57,25 @@ def get_connection(path: str):
     return sqlite3.connect(path, check_same_thread=False)
 
 
-@st.cache_resource()
 def get_data(_conn: Connection):
     df1 = pd.read_sql("SELECT * FROM detections", con=conn)
     return df1
 
 
 conn = get_connection(URI_SQLITE_DB)
-df = get_data(conn)
-df2 = df.copy()
+df2 = get_data(conn)
 df2['DateTime'] = pd.to_datetime(df2['Date'] + " " + df2['Time'])
 df2 = df2.set_index('DateTime')
+
+if len(df2) == 0:
+    st.info('No data yet. Please come back later.')
+    exit(0)
 
 daily = st.sidebar.checkbox('Single Day View', help='Select if you want single day view, unselect for multi-day views')
 
 if daily:
-    # Date as slider
     Start_Date = pd.to_datetime(df2.index.min()).date()
     End_Date = pd.to_datetime(df2.index.max()).date()
-#     cols1, cols2 = st.columns((1, 1))
     end_date = st.sidebar.date_input('Date to View',
                                      min_value=Start_Date,
                                      max_value=End_Date,
@@ -73,22 +85,11 @@ if daily:
 else:
     Start_Date = pd.to_datetime(df2.index.min()).date()
     End_Date = pd.to_datetime(df2.index.max()).date()
-
-#    cols1, cols2 = st.columns((1, 1))
     start_date, end_date = st.sidebar.slider('Date Range',
                                              min_value=Start_Date-timedelta(days=1),
                                              max_value=End_Date,
                                              value=(Start_Date, End_Date),
                                              help='Select start and end date, if same date get a clockplot for a single day')
-
-# start_date, end_date = cols1.date_input(
-#     "Date Input for Analysis - select Range for single specie analysis, select single date for daily view",
-#     value=(Start_Date, End_Date),
-#     min_value=Start_Date,
-#     max_value=End_Date)
-
-# start_date = datetime(2022 ,5 ,17).date()
-# end_date = datetime(2022 ,5 ,17).date()
 
 
 @st.cache_data()
@@ -158,37 +159,37 @@ hourly = pd.crosstab(df5, df5.index.hour, dropna=True, margins=True)
 # Filter on species
 species = list(hourly.sort_values("All", ascending=False).index)
 
-# cols1, cols2 = st.columns((1, 1))
-top_N = st.sidebar.slider(
-    'Select Number of Birds to Show',
-    min_value=1,
-    max_value=len(Specie_Count),
-    value=min(10, len(Specie_Count))
-)
+if len(Specie_Count) > 1:
+    top_N = st.sidebar.slider(
+        'Select Number of Birds to Show',
+        min_value=1,
+        max_value=len(Specie_Count),
+        value=min(10, len(Specie_Count))
+    )
+else:
+    top_N = 1
 
 top_N_species = (df5.value_counts()[:top_N])
 
 font_size = 15
 
-def sunrise_sunset_scatter(num_days_to_display):
-    latitude = df['Lat'][0]
-    longitude = df['Lon'][0]
+
+def sunrise_sunset_scatter(date_range):
+    conf = get_settings()
+    latitude = conf.getfloat('LATITUDE')
+    longitude = conf.getfloat('LONGITUDE')
 
     sun = Sun(latitude, longitude)
 
     sunrise_list = []
     sunset_list = []
-    sunrise_week_list = []
-    sunset_week_list = []
     sunrise_text_list = []
     sunset_text_list = []
+    daysback_range = []
 
-    now = datetime.now()
+    current_date = start_date
 
-    for past_day in range(num_days_to_display):
-        d = timedelta(days=num_days_to_display - past_day - 1)
-
-        current_date = now - d
+    for current_date in date_range:
         # current_date = datetime.fromisocalendar(2022, week + 1, 5)
         # time_zone = datetime.now()
         sun_rise = sun.get_local_sunrise_time(current_date)
@@ -203,17 +204,18 @@ def sunrise_sunset_scatter(num_days_to_display):
         sunset_text_list.append(temp_time)
         sunrise_list.append(sun_rise_time)
         sunset_list.append(sun_dusk_time)
-        sunrise_week_list.append(past_day)
-        sunset_week_list.append(past_day)
 
-    sunrise_week_list.append(None)
+        daysback_range.append(current_date.strftime('%d-%m-%Y'))
+
     sunrise_list.append(None)
     sunrise_text_list.append(None)
-    sun_list = sunrise_list.extend(sunset_list)
-    sun_week_list = sunrise_week_list.extend(sunset_week_list)
+    sunrise_list.extend(sunset_list)
     sunrise_text_list.extend(sunset_text_list)
+    daysback_range.append(None)
+    daysback_range.extend(daysback_range)
 
-    return sunrise_week_list, sunrise_list, sunrise_text_list
+    return daysback_range, sunrise_list, sunrise_text_list
+
 
 def hms_to_dec(t):
     # (h, m, s) = t.split(':')
@@ -222,6 +224,7 @@ def hms_to_dec(t):
     s = t.second / 3600
     result = h + m + s
     return result
+
 
 def hms_to_str(t):
     # (h, m, s) = t.split(':')
@@ -243,7 +246,7 @@ if daily is False:
 
     # filt = df2['Com_Name'] == specie
         if specie == 'All':
-            df_counts = int(hourly[hourly.index == specie]['All'])
+            df_counts = int(hourly[hourly.index == specie]['All'].iloc[0])
             fig = make_subplots(
                 rows=3, cols=2,
                 specs=[[{"type": "xy", "rowspan": 3}, {"type": "polar", "rowspan": 2}],
@@ -358,7 +361,7 @@ if daily is False:
                 daily = pd.crosstab(df5, df5.index.date, dropna=True, margins=True)
                 fig.add_trace(go.Bar(x=daily.columns[:-1], y=daily.loc[specie][:-1], marker_color='seagreen'), row=3, col=1)
                 st.plotly_chart(fig, use_container_width=True)  # , config=config)
-                df_counts = int(hourly[hourly.index == specie]['All'])
+                df_counts = int(hourly[hourly.index == specie]['All'].iloc[0])
                 st.subheader('Total Detect:' + str('{:,}'.format(df_counts))
                              + '   Confidence Max:' +
                              str('{:.2f}%'.format(max(df2[df2['Com_Name'] == specie]['Confidence']) * 100))
@@ -451,12 +454,7 @@ if daily is False:
             # text=labels,
             texttemplate="%{text}", autocolorscale=False, colorscale=selected_pal
         )
-        num_days_to_display = len(fig_x)
-        sunrise_week_list, sunrise_list, sunrise_text_list = sunrise_sunset_scatter(num_days_to_display)
-        daysback_range = fig_x
-        daysback_range.append(None)
-        daysback_range.extend(daysback_range)
-        daysback_range = daysback_range[:-1]
+        daysback_range, sunrise_list, sunrise_text_list = sunrise_sunset_scatter(day_hour_freq.index.tolist())
 
         sunrise_sunset = go.Scatter(x=daysback_range,
                                     y=sunrise_list,
@@ -470,10 +468,10 @@ if daily is False:
         y_downscale_factor = int(len(saved_time_labels) / number_of_y_ticks)
         fig.update_layout(
             yaxis=dict(
-                tickmode = 'array',
-                tickvals = day_hour_freq.columns[::y_downscale_factor],
-                ticktext = saved_time_labels[::y_downscale_factor],
-                nticks = 6
+                tickmode='array',
+                tickvals=day_hour_freq.columns[::y_downscale_factor],
+                ticktext=saved_time_labels[::y_downscale_factor],
+                nticks=6
             )
         )
         st.plotly_chart(fig, use_container_width=True)  # , config=config)
@@ -536,3 +534,7 @@ else:
 # audio_file = open('/home/*/BirdSongs/Extracted/By_Date/2022-03-22/Yellow-streaked_Greenbul/Yellow-streaked_Greenbul-77-2022-03-22-birdnet-15:04:28.mp3', 'rb')
 # audio_bytes = audio_file.read()
 # cols4.audio(audio_bytes, format='audio/mp3')
+if profile:
+    profiler.stop()
+    profiler.print()
+    print('**profiler done**', flush=True)
