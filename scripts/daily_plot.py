@@ -19,8 +19,8 @@ font_dir = [userDir + '/BirdNET-Pi/homepage/static']
 for font in font_manager.findSystemFonts(font_dir):
     font_manager.fontManager.addfont(font)
 
-# Set number of species to report
-readings = 25
+# Set number of species to report (reduced from 25 to 15 for better performance)
+readings = 15
 
 # Set Palette for graphics
 pal = "Greens"
@@ -31,16 +31,23 @@ current_hour = now.hour
 
 
 def retrieve_data():
+    """Retrieve only the last 24 hours of data with only needed columns for performance"""
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query("SELECT * from detections", conn)
+    # Only fetch last 24 hours worth of data and only columns we need
+    query = """
+    SELECT Date, Time, Com_Name, Confidence
+    FROM detections
+    WHERE Date >= date('now', '-1 day', 'localtime')
+    ORDER BY Date DESC, Time DESC
+    """
+    df = pd.read_sql_query(query, conn, parse_dates={'Timestamp': ['Date', 'Time']})
+    conn.close()
     return df
 
 def format_data(df):
-    # Convert Date and Time Fields to Panda's format
-    df['Timestamp'] = pd.to_datetime(df['Date'] + ' ' + df['Time'])
-
+    # Timestamp is already parsed in retrieve_data()
     # Add round hours to dataframe
-    df['Hour of Day'] = [r.hour for r in df.Timestamp]
+    df['Hour of Day'] = df['Timestamp'].dt.hour
 
     return df
 
@@ -133,7 +140,7 @@ def create_plots(top_n_today):
     plot.set(xlabel="Hour of Day")
     # Set combined plot layout and titles
     f.subplots_adjust(top=0.9)
-    plt.suptitle("Top 25 Last Updated: " + str(now.strftime("%Y-%m-%d %H:%M")))
+    plt.suptitle(f"Top {readings} Last Updated: " + str(now.strftime("%Y-%m-%d %H:%M")))
 
     # Save combined plot
     # savename = userDir + '/BirdSongs/Extracted/Charts/Combo-' + str(now.strftime("%Y-%m-%d")) + '.png'
