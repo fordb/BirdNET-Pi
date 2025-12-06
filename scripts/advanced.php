@@ -5,8 +5,17 @@ error_reporting(E_ERROR);
 require_once "scripts/common.php";
 $home = get_home();
 $config = get_config();
+$user = get_user();
 
 ensure_authenticated();
+
+if (isset($_GET['run_species_count'])) {
+   echo "<script>";
+   $output = shell_exec("sudo -u $user ".$home."/BirdNET-Pi/scripts/disk_species_count.sh 2>&1");
+   $escaped_output = htmlspecialchars($output, ENT_QUOTES | ENT_SUBSTITUTE);
+   echo "alert(`$escaped_output`);";
+   echo "</script>";
+ }
 
 if(isset($_GET['submit'])) {
   $contents = file_get_contents('/etc/birdnet/birdnet.conf');
@@ -130,6 +139,20 @@ if(isset($_GET['submit'])) {
     }
   }
 
+  if (isset($_GET["purge_threshold"])) {
+    $purge_threshold = $_GET["purge_threshold"];
+    if (strcmp($purge_threshold, $config['PURGE_THRESHOLD']) !== 0) {
+        $contents = preg_replace("/PURGE_THRESHOLD=.*/", "PURGE_THRESHOLD=$purge_threshold", $contents);
+    }
+}
+
+if (isset($_GET["max_files_species"])) {
+    $max_files_species = $_GET["max_files_species"];
+    if (strcmp($max_files_species, $config['MAX_FILES_SPECIES']) !== 0) {
+        $contents = preg_replace("/MAX_FILES_SPECIES=.*/", "MAX_FILES_SPECIES=$max_files_species", $contents);
+    }
+}
+	
   if(isset($_GET["privacy_threshold"])) {
     $privacy_threshold = $_GET["privacy_threshold"];
     if(strcmp($privacy_threshold,$config['PRIVACY_THRESHOLD']) !== 0) {
@@ -180,6 +203,15 @@ if(isset($_GET['submit'])) {
     $contents = preg_replace("/SILENCE_UPDATE_INDICATOR=.*/", "SILENCE_UPDATE_INDICATOR=0", $contents);
   }
 
+  if(isset($_GET["automatic_update"])) {
+    $automatic_update = 1;
+    if(strcmp($automatic_update,$config['AUTOMATIC_UPDATE']) !== 0) {
+      $contents = preg_replace("/AUTOMATIC_UPDATE=.*/", "AUTOMATIC_UPDATE=$automatic_update", $contents);
+    }
+  } else {
+    $contents = preg_replace("/AUTOMATIC_UPDATE=.*/", "AUTOMATIC_UPDATE=0", $contents);
+  }
+
   if(isset($_GET["raw_spectrogram"])) {
     $raw_spectrogram = 1;
     if(strcmp($RAW_SPECTROGRAM,$config['RAW_SPECTROGRAM']) !== 0) {
@@ -187,6 +219,15 @@ if(isset($_GET['submit'])) {
     }
   } else {
     $contents = preg_replace("/RAW_SPECTROGRAM=.*/", "RAW_SPECTROGRAM=0", $contents);
+  }
+
+  if(isset($_GET["rare_species_threshold"])) {
+    $rare_species_threshold = $_GET["rare_species_threshold"];
+    if(strcmp($rare_species_threshold, $config['RARE_SPECIES_THRESHOLD']) !== 0) {
+        $contents = preg_replace("/RARE_SPECIES_THRESHOLD=.*/", "RARE_SPECIES_THRESHOLD=$rare_species_threshold", $contents);
+    }
+  } else {
+      $contents = preg_replace("/RARE_SPECIES_THRESHOLD=.*/", "RARE_SPECIES_THRESHOLD=30", $contents);
   }
 
   if(isset($_GET["custom_image"])) {
@@ -211,13 +252,13 @@ if(isset($_GET['submit'])) {
   }
   if (isset($_GET["LogLevel_SpectrogramViewerService"])) {
     $spectrogram_viewer_service_log_level = trim($_GET["LogLevel_SpectrogramViewerService"]);
-	if (strcmp($birdnet_recording_service_log_level, $config['LogLevel_BirdnetRecordingService']) !== 0) {
-		$contents = preg_replace("/LogLevel_SpectrogramViewerService=.*/", "LogLevel_BirdnetRecordingService=\"$spectrogram_viewer_service_log_level\"", $contents);
+	if (strcmp($spectrogram_viewer_service_log_level, $config['LogLevel_SpectrogramViewerService']) !== 0) {
+		$contents = preg_replace("/LogLevel_SpectrogramViewerService=.*/", "LogLevel_SpectrogramViewerService=\"$spectrogram_viewer_service_log_level\"", $contents);
 	}
   }
   if (isset($_GET["LogLevel_LiveAudioStreamService"])) {
     $livestream_audio_service_log_level = trim($_GET["LogLevel_LiveAudioStreamService"]);
-	if (strcmp($birdnet_recording_service_log_level, $config['LogLevel_LiveAudioStreamService']) !== 0) {
+	if (strcmp($livestream_audio_service_log_level, $config['LogLevel_LiveAudioStreamService']) !== 0) {
 		$contents = preg_replace("/LogLevel_LiveAudioStreamService=.*/", "LogLevel_LiveAudioStreamService=\"$livestream_audio_service_log_level\"", $contents);
 		$restart_livestream = True;
 	}
@@ -239,8 +280,7 @@ if(isset($_GET['submit'])) {
   }
 }
 
-$count_labels = count(file($home."/BirdNET-Pi/model/labels.txt"));
-$count = $count_labels;
+$count = 6000;
 ?>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
@@ -252,7 +292,7 @@ $count = $count_labels;
 $newconfig = get_config();
 ?>
       <div class="brbanner"><h1>Advanced Settings</h1></div><br>
-    <form action="" method="GET">
+    <form id="advancedform" action="" method="GET">
       <table class="settingstable"><tr><td>
       <h2>Privacy Threshold</h2>
       <div class="slidecontainer">
@@ -274,30 +314,43 @@ $newconfig = get_config();
       </td></tr></table><br>
       
       <table class="settingstable"><tr><td>
-      <h2>Full Disk Behaviour</h2>
+      <h2>Disk Management</h2>
       <label for="purge">
       <input name="full_disk" type="radio" id="purge" value="purge" <?php if (strcmp($newconfig['FULL_DISK'], "purge") == 0) { echo "checked"; }?>>Purge</label>
       <label for="keep">
       <input name="full_disk" type="radio" id="keep" value="keep" <?php if (strcmp($newconfig['FULL_DISK'], "keep") == 0) { echo "checked"; }?>>Keep</label>
       <p>When the disk becomes full, you can choose to 'purge' old files to make room for new ones or 'keep' your data and stop all services instead.<br>Note: you can exclude specific files from 'purge' on the Recordings page.</p>
+      <br>
+      <label for="purge_threshold">Purge Threshold (Disk Used %):</label>
+      <input name="purge_threshold" type="number" style="width:6em;" min="20" max="99" step="1" value="<?php print($newconfig['PURGE_THRESHOLD']);?>"/>
+      <p>Defines how full the disk should be before the purge operations occur.<br>Note: This variable is still active if Keep is set. This means that the servies will be stopped at the purge threshold.</p><br>
+      <label for="max_files_species">Number of files to keep for each species :</label>
+      <input name="max_files_species" type="number" style="width:6em;" min="0" step="1" value="<?php print($newconfig['MAX_FILES_SPECIES']);?>"/>
+      </td></tr><tr><td>
+      If different than 0 (keep all), defines the number of files to keep for each species, with priority given to files with higher confidence. This value does not include files from the last 7 days, these new files are protected against auto-deletion.
+      </td></tr><tr><td>
+      Note only the spectrogram and audio files are deleted, the obsevation data remains in the database.
+      The files protected through the "lock" icon are also not affected.
+      <br>
+      <button type="submit" name="run_species_count" value="1" onclick="{this.innerHTML = 'Loading ... please wait.';this.classList.add('disabled')}"><i>[Click here for disk usage summary]</i></button>
       </td></tr></table><br>
       <table class="settingstable"><tr><td>
 
       <h2>Audio Settings</h2>
       <label for="rec_card">Audio Card: </label>
       <input name="rec_card" type="text" size="12" value="<?php print($newconfig['REC_CARD']);?>" required/><br>
-      <p>Set Audio Card to 'default' to use PulseAudio (always recommended), or an ALSA recognized sound card device from the output of `arecord -L`. Choose the `dsnoop` device if it is available</p>
+      Set Audio Card to 'default' to use PulseAudio (always recommended), or an ALSA recognized sound card device from the output of `arecord -L`. Choose the `dsnoop` device if it is available.<br><br>
       <label for="channels">Audio Channels: </label>
       <input name="channels" type="number" style="width:3em;" min="1" max="32" step="1" value="<?php print($newconfig['CHANNELS']);?>" required/><br>
-      <p>Set Channels to the number of channels supported by your sound card. 32 max.</p>
+      Set Channels to the number of channels supported by your sound card. 32 max.<br><br>
       <label for="recording_length">Recording Length: </label>
       <input name="recording_length" oninput="document.getElementsByName('extraction_length')[0].setAttribute('max', this.value);" type="number" style="width:3em;" min="3" max="60" step="1" value="<?php print($newconfig['RECORDING_LENGTH']);?>" required/><br>
-      <p>Set Recording Length in seconds between 6 and 60. Multiples of 3 are recommended, as BirdNET analyzes in 3-second chunks.</p> 
+      Set Recording Length in seconds between 6 and 60. Multiples of 3 are recommended, as BirdNET analyzes in 3-second chunks.<br><br> 
       <label for="extraction_length">Extraction Length: </label>
       <input name="extraction_length" oninput="this.setAttribute('max', document.getElementsByName('recording_length')[0].value);" type="number" style="width:3em;" min="3" value="<?php print($newconfig['EXTRACTION_LENGTH']);?>" /><br>
-      <p>Set Extraction Length to something less than your Recording Length. Min=3 Max=Recording Length</p>
+      Set Extraction Length to something less than your Recording Length. Min=3 Max=Recording Length<br><br>
       <label for="audiofmt">Extractions Audio Format</label>
-      <select name="audiofmt">
+      <select name="audiofmt" class="testbtn">
       <option selected="<?php print($newconfig['AUDIOFMT']);?>"><?php print($newconfig['AUDIOFMT']);?></option>
 <?php
   $formats = array("8svx", "aif", "aifc", "aiff", "aiffc", "al", "amb", "amr-nb", "amr-wb", "anb", "au", "avr", "awb", "caf", "cdda", "cdr", "cvs", "cvsd", "cvu", "dat", "dvms", "f32", "f4", "f64", "f8", "fap", "flac", "fssd", "gsm", "gsrt", "hcom", "htk", "ima", "ircam", "la", "lpc", "lpc10", "lu", "mat", "mat4", "mat5", "maud", "mp2", "mp3", "nist", "ogg", "paf", "prc", "pvf", "raw", "s1", "s16", "s2", "s24", "s3", "s32", "s4", "s8", "sb", "sd2", "sds", "sf", "sl", "sln", "smp", "snd", "sndfile", "sndr", "sndt", "sou", "sox", "sph", "sw", "txw", "u1", "u16", "u2", "u24", "u3", "u32", "u4", "u8", "ub", "ul", "uw", "vms", "voc", "vorbis", "vox", "w64", "wav", "wavpcm", "wv", "wve", "xa", "xi");
@@ -409,15 +462,26 @@ foreach($formats as $format){
       <input style="width:40ch;" name="birdnetpi_url" type="url" value="<?php print($newconfig['BIRDNETPI_URL']);?>" /><br>
       <p>The BirdNET-Pi URL is how the main page will be reached. If you want your installation to respond to an IP address, place that here, but be sure to indicate "<i>http://</i>".<br>Example for IP: <i>http://192.168.0.109</i><br>Example if you own your own domain: <i>https://virginia.birdnetpi.com</i></p>
       </td></tr></table><br>
+		
       <table class="settingstable"><tr><td>
       <h2>Options</h2>
+		  
       <label for="silence_update_indicator">Silence Update Indicator: </label>
-      <input type="checkbox" name="silence_update_indicator" <?php if($newconfig['SILENCE_UPDATE_INDICATOR'] == 1) { echo "checked"; };?> ><br>
-      <p>This allows you to quiet the display of how many commits your installation is behind by relative to the Github repo. This number appears next to "Tools" when you're 50 or more commits behind.</p>
-
+      <input type="checkbox" name="silence_update_indicator" <?php if($newconfig['SILENCE_UPDATE_INDICATOR'] == 1) { echo "checked"; };?> >
+      <p>This allows you to quiet the display of how many commits your installation is behind by relative to the Github repo. This number appears next to "Tools" when you're 50 or more commits behind.</p><br>
+		  
+      <label for="automatic_update">Automatic Update: </label>
+      <input type="checkbox" name="automatic_update" <?php if($newconfig['AUTOMATIC_UPDATE'] == 1) { echo "checked"; };?> >
+      <p>This configures an automatic update of the installation each Sunday at 3:00 AM but the timing can be changed using crontab.</p><br>
+		  
       <label for="raw_spectrogram">Minimalist Spectrograms: </label>
-      <input type="checkbox" name="raw_spectrogram" <?php if($newconfig['RAW_SPECTROGRAM'] == 1) { echo "checked"; };?> ><br>
-      <p>This allows you to remove the axes and labels of the spectrograms that are generated by Sox for each detection for a cleaner appearance.</p>
+      <input type="checkbox" name="raw_spectrogram" <?php if($newconfig['RAW_SPECTROGRAM'] == 1) { echo "checked"; };?> >
+      <p>This allows you to remove the axes and labels of the spectrograms that are generated by Sox for each detection for a cleaner appearance.</p><br>
+
+      <label for="rare_species_threshold">Rare Species Threshold (days): </label>
+      <input type="number" name="rare_species_threshold" min="1" value="<?php echo isset($newconfig['RARE_SPECIES_THRESHOLD']) ? $newconfig['RARE_SPECIES_THRESHOLD'] : 30; ?>">
+      <p>This setting defines after how many days since last detection a species is considered rare. Default is 30 days.</p>
+		  
       </td></tr></table><br>
 
       <table class="settingstable"><tr><td>
@@ -460,7 +524,7 @@ foreach($formats as $format){
         <p style="margin-left: 40px">
 
       <label for="freqshift_tool">Shifting tool: </label>
-      <select name="freqshift_tool">
+      <select name="freqshift_tool" class="testbtn">
             <option selected="<?php print($newconfig['FREQSHIFT_TOOL']);?>"><?php print($newconfig['FREQSHIFT_TOOL']);?></option>
       <?php
         $formats = array("sox","ffmpeg");
@@ -511,7 +575,7 @@ foreach($formats as $format){
             </tr>
             <tr>
                 <td>Birdnet Recording:
-                    <select id="LogLevel_BirdnetRecordingService" name="LogLevel_BirdnetRecordingService">
+                    <select class="testbtn" id="LogLevel_BirdnetRecordingService" name="LogLevel_BirdnetRecordingService">
                         <option value="error" <?php echo $newconfig['LogLevel_BirdnetRecordingService'] == "error" || !array_key_exists('LogLevel_BirdnetRecordingService', $newconfig) ? "selected=''" : "" ?>>
                             Errors Only
                         </option>
@@ -529,7 +593,7 @@ foreach($formats as $format){
             </tr>
             <tr>
                 <td>Live Audio Stream:
-                    <select id="LogLevel_LiveAudioStreamService" name="LogLevel_LiveAudioStreamService">
+                    <select class="testbtn" id="LogLevel_LiveAudioStreamService" name="LogLevel_LiveAudioStreamService">
                         <option value="error" <?php echo $newconfig['LogLevel_LiveAudioStreamService'] == "error" || !array_key_exists('LogLevel_LiveAudioStreamService', $newconfig) ? "selected=''" : "" ?>>
                             Errors Only
                         </option>
@@ -547,7 +611,7 @@ foreach($formats as $format){
             </tr>
             <tr>
                 <td>Spectrogram Service:
-                    <select id="LogLevel_SpectrogramViewerService" name="LogLevel_SpectrogramViewerService">
+                    <select class="testbtn" id="LogLevel_SpectrogramViewerService" name="LogLevel_SpectrogramViewerService">
                         <option value="error" <?php echo $newconfig['LogLevel_SpectrogramViewerService'] == "error" || !array_key_exists('LogLevel_SpectrogramViewerService', $newconfig) ? "selected=''" : "" ?>>
                             Errors Only
                         </option>
@@ -577,13 +641,12 @@ foreach($formats as $format){
       <br><br>
       <input type="hidden" name="view" value="Advanced">
 <div class="float">
-      <button onclick="if(<?php print($newconfig['PRIVACY_THRESHOLD']);?> != document.getElementById('privacy_threshold').value){return confirm('This will take about 90 seconds.')} collectrtspUrls();" type="submit" name="submit" value="advanced">
+      <button type="submit" id="advancedformsubmit" onclick="collectrtspUrls(); if(document.getElementById('advancedform').checkValidity()){this.innerHTML = 'Updating... please wait.';this.classList.add('disabled')}" name="submit" value="advanced">
 <?php
 if(isset($_GET['submit'])){
-  echo "Success!";
-} else {
-  echo "Update Settings";
+  echo '<script>alert("Settings successfully updated");</script>';
 }
+echo "Update Settings";
 ?>
       </button></div>
       </form>

@@ -1,104 +1,144 @@
 import argparse
-import sqlite3
 import os
-import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
-from datetime import datetime, timedelta
+import sqlite3
 import textwrap
-import matplotlib.font_manager as font_manager
-from utils.helpers import DB_PATH
+from datetime import datetime
 from time import sleep
 
-userDir = os.path.expanduser('~')
+import matplotlib.font_manager as font_manager
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib import rcParams
+from matplotlib.colors import LogNorm
 
-# Add every font at the specified location
-font_dir = [userDir + '/BirdNET-Pi/homepage/static']
-for font in font_manager.findSystemFonts(font_dir):
-    font_manager.fontManager.addfont(font)
-
-# Set number of species to report (reduced from 25 to 15 for better performance)
-readings = 15
-
-# Set Palette for graphics
-pal = "Greens"
-
-# current time
-now = datetime.now()
-current_hour = now.hour
+from utils.helpers import DB_PATH, FONT_DIR, get_settings, get_font
 
 
-def retrieve_data():
-    """Retrieve only the last 24 hours of data with only needed columns for performance"""
-    conn = sqlite3.connect(DB_PATH)
-    # Only fetch last 24 hours worth of data and only columns we need
-    query = """
-    SELECT Date, Time, Com_Name, Confidence
-    FROM detections
-    WHERE Date >= date('now', '-1 day', 'localtime')
-    ORDER BY Date DESC, Time DESC
-    """
-    df = pd.read_sql_query(query, conn, parse_dates={'Timestamp': ['Date', 'Time']})
-    conn.close()
-    return df
+def get_data(now=None):
+    uri = f"file:{DB_PATH}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    if now is None:
+        now = datetime.now()
+    df = pd.read_sql_query(f"SELECT * from detections WHERE Date = DATE('{now.strftime('%Y-%m-%d')}')",
+                           conn)
 
-def format_data(df):
-    # Timestamp is already parsed in retrieve_data()
+    # Convert Date and Time Fields to Panda's format
+    df['Date'] = pd.to_datetime(df['Date'])
+    df['Time'] = pd.to_datetime(df['Time'], unit='ns')
+
     # Add round hours to dataframe
-    df['Hour of Day'] = df['Timestamp'].dt.hour
+    df['Hour of Day'] = [r.hour for r in df.Time]
 
-    return df
+    return df, now
 
-def get_top_n_today(df):
-    # Get readings for past 24 hours
-    now_rounded_up = now + timedelta(hours=1)
-    now_rounded_up = now_rounded_up.replace(minute=0, second=0, microsecond=0)
-    # Calculate the datetime for 24 hours ago
-    one_day_ago = now_rounded_up - timedelta(days=1)
 
-    # Filter the DataFrame for rows where the 'Timestamp' is within the past 24 hours
-    df_last_24_hours = df[(df['Timestamp'] >= one_day_ago) & (df['Timestamp'] <= now)]
+# Function to show value on bars - from https://stackoverflow.com/questions/43214978/seaborn-barplot-displaying-values
+def show_values_on_bars(ax, label):
+    conf = get_settings()
 
-    plt_top_n_today = (df_last_24_hours['Com_Name'].value_counts()[:readings])
-    df_plt_top_n_today = df_last_24_hours[df_last_24_hours.Com_Name.isin(plt_top_n_today.index)]
-    
-    if df_plt_top_n_today.empty:
-        exit(0)
+    for i, p in enumerate(ax.patches):
+        x = p.get_x() + p.get_width() * 0.9
+        y = p.get_y() + p.get_height() / 2
+        # Species confidence
+        # value = '{:.0%}'.format(label.iloc[i])
+        # Species Count Total
+        value = '{:n}'.format(p.get_width())
+        bbox = {'facecolor': 'lightgrey', 'edgecolor': 'none', 'pad': 1.0}
+        if conf['COLOR_SCHEME'] == "dark":
+            color = 'black'
+        else:
+            color = 'darkgreen'
 
-    return df_plt_top_n_today
+        ax.text(x, y, value, bbox=bbox, ha='center', va='center', size=9, color=color)
 
-def create_plots(top_n_today):
-    # Plot daily heatmap plot
+
+def wrap_width(txt):
+    # try to estimate wrap width
+    w = 16
+    for c in txt:
+        if c in ['M', 'm', 'W', 'w']:
+            w -= 0.33
+        if c in ['I', 'i', 'j', 'l']:
+            w += 0.33
+    return round(w)
+
+
+def create_plot(df_plt_today, now, is_top=None):
+    if is_top is not None:
+        readings = 10
+        if is_top:
+            plt_selection_today = (df_plt_today['Sci_Name'].value_counts()[:readings])
+        else:
+            plt_selection_today = (df_plt_today['Sci_Name'].value_counts()[-readings:])
+    else:
+        plt_selection_today = df_plt_today['Sci_Name'].value_counts()
+        readings = len(df_plt_today['Sci_Name'].value_counts())
+
+    df_plt_selection_today = df_plt_today[df_plt_today.Sci_Name.isin(plt_selection_today.index)]
+
+    conf = get_settings()
 
     # Set up plot axes and titles
-    f, axs = plt.subplots(1, 2, figsize=(12, 8), gridspec_kw=dict(width_ratios=[1, 6]), facecolor='#77C487')
-    plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=0, hspace=0)
+    height = max(readings / 3, 0) + 1.06
+    if conf['COLOR_SCHEME'] == "dark":
+        facecolor = 'darkgrey'
+    else:
+        facecolor = '#77C487'
+
+    f, axs = plt.subplots(1, 2, figsize=(10, height), gridspec_kw=dict(width_ratios=[3, 6]), facecolor=facecolor)
 
     # generate y-axis order for all figures based on frequency
-    freq_order = pd.value_counts(top_n_today['Com_Name']).iloc[:readings].index
+    freq_order = df_plt_selection_today['Sci_Name'].value_counts().index
 
     # make color for max confidence --> this groups by name and calculates max conf
-    confmax = top_n_today.groupby('Com_Name')['Confidence'].max()
+    confmax = df_plt_selection_today.groupby('Sci_Name')['Confidence'].max()
     # reorder confmax to detection frequency order
     confmax = confmax.reindex(freq_order)
 
     # norm values for color palette
     norm = plt.Normalize(confmax.values.min(), confmax.values.max())
-    colors = plt.cm.Greens(norm(confmax))
+    if is_top or is_top is None:
+        # Set Palette for graphics
+        if conf['COLOR_SCHEME'] == "dark":
+            pal = "Greys"
+            colors = plt.cm.Greys(norm(confmax)).tolist()
+        else:
+            pal = "Greens"
+            colors = plt.cm.Greens(norm(confmax)).tolist()
+        if is_top:
+            plot_type = "Top"
+        else:
+            plot_type = 'All'
+        name = "Combo"
+    else:
+        # Set Palette for graphics
+        pal = "Reds"
+        colors = plt.cm.Reds(norm(confmax)).tolist()
+        plot_type = "Bottom"
+        name = "Combo2"
 
     # Generate frequency plot
-    plot = sns.countplot(y='Com_Name', data=top_n_today, palette=colors, order=freq_order, ax=axs[0])
+    plot = sns.countplot(y='Sci_Name', hue='Sci_Name', legend=False, data=df_plt_selection_today,
+                         palette=dict(zip(confmax.index, colors)), order=freq_order, ax=axs[0], edgecolor='lightgrey')
+
+    # Prints Max Confidence on bars
+    show_values_on_bars(axs[0], confmax)
 
     # Try plot grid lines between bars - problem at the moment plots grid lines on bars - want between bars
-    z = plot.get_ymajorticklabels()
-    plot.set_yticklabels(['\n'.join(textwrap.wrap(ticklabel.get_text(), 15)) for ticklabel in plot.get_yticklabels()], fontsize=8)
+    names_key = df_plt_today.sort_values('Time', ascending=False).groupby('Sci_Name').first()['Com_Name']
+    common_names = [names_key[tick_label.get_text()] for tick_label in plot.get_yticklabels()]
+    yticklabels = ['\n'.join(textwrap.wrap(ticklabel, wrap_width(ticklabel))) for ticklabel in common_names]
+    # Next two lines avoid a UserWarning on set_ticklabels() requesting a fixed number of ticks
+    yticks = plot.get_yticks()
+    plot.set_yticks(yticks)
+    plot.set_yticklabels(yticklabels, fontsize=10)
     plot.set(ylabel=None)
     plot.set(xlabel="Detections")
 
     # Generate crosstab matrix for heatmap plot
-    heat = pd.crosstab(top_n_today['Com_Name'], top_n_today['Hour of Day'])
+    heat = pd.crosstab(df_plt_selection_today['Sci_Name'], df_plt_selection_today['Hour of Day'])
 
     # Order heatmap Birds by frequency of occurrance
     heat.index = pd.CategoricalIndex(heat.index, categories=freq_order)
@@ -106,31 +146,23 @@ def create_plots(top_n_today):
 
     hours_in_day = pd.Series(data=range(0, 24))
     heat_frame = pd.DataFrame(data=0, index=heat.index, columns=hours_in_day)
-    heat = (heat + heat_frame).fillna(0)
+    heat = (heat+heat_frame).fillna(0)
+    # mask out zeros, so they do not show up in the final plot. this happens when max count/h is one
+    heat[heat == 0] = np.nan
 
+    # Generatie heatmap plot
+    plot = sns.heatmap(heat, norm=LogNorm(),  annot=True,  annot_kws={"fontsize": 7}, fmt="g", cmap=pal, square=False,
+                       cbar=False, linewidths=0.5, linecolor="Grey", ax=axs[1], yticklabels=False)
 
-    # Reorder the columns to start from the hour after the current hour
-    columns_order = list(range(current_hour + 1, 24)) + list(range(0, current_hour + 1))
-    heat = heat[columns_order]
+    # Set color and weight of tick label for current hour
+    for label in plot.get_xticklabels():
+        if int(label.get_text()) == now.hour:
+            if conf['COLOR_SCHEME'] == "dark":
+                label.set_color('white')
+            else:
+                label.set_color('yellow')
 
-    # Generate heatmap plot
-    plot = sns.heatmap(
-        heat,
-        norm=LogNorm(),
-        annot=True,
-        annot_kws={"fontsize": 7},
-        fmt="g",
-        cmap=pal,
-        square=False,
-        cbar=False,
-        linewidths=0.5,
-        linecolor="Grey",
-        ax=axs[1],
-        yticklabels=False
-    )
-
-
-    plot.set_xticklabels(plot.get_xticklabels(), rotation=0, size=7)
+    plot.set_xticklabels(plot.get_xticklabels(), rotation=0, size=8)
 
     # Set heatmap border
     for _, spine in plot.spines.items():
@@ -139,100 +171,50 @@ def create_plots(top_n_today):
     plot.set(ylabel=None)
     plot.set(xlabel="Hour of Day")
     # Set combined plot layout and titles
-    f.subplots_adjust(top=0.9)
-    plt.suptitle(f"Top {readings} Last Updated: " + str(now.strftime("%Y-%m-%d %H:%M")))
+    y = 1 - 8 / (height * 100)
+    plt.suptitle(f"{plot_type} {readings} Last Updated: {now.strftime('%Y-%m-%d %H:%M')}", y=y)
+    f.tight_layout()
+    top = 1 - 40 / (height * 100)
+    f.subplots_adjust(left=0.125, right=0.9, top=top, wspace=0)
 
     # Save combined plot
-    # savename = userDir + '/BirdSongs/Extracted/Charts/Combo-' + str(now.strftime("%Y-%m-%d")) + '.png'
-    savename = userDir + '/Desktop/Combo-' + str(now.strftime("%Y-%m-%d")) + '.png'
-    plt.savefig(savename)
+    save_name = os.path.expanduser(f"~/BirdSongs/Extracted/Charts/{name}-{now.strftime('%Y-%m-%d')}.png")
+    plt.savefig(save_name)
     plt.show()
     plt.close()
 
 
-    # Plot bird sparklines
-    # Get the most common birds
-    top_birds = top_n_today['Com_Name'].value_counts().nlargest(readings).index
-
-    # Filter the DataFrame to include only the top 10 most common birds
-    top_df = top_n_today[top_n_today['Com_Name'].isin(top_birds)]
-
-    # Create a DataFrame with all 15-minute intervals for the day
-    now_rounded_up = now + timedelta(hours=1)
-    now_rounded_up = now_rounded_up.replace(minute=0, second=0, microsecond=0)
-    one_day_ago = now_rounded_up - timedelta(days=1)
-    all_intervals = pd.date_range(start=one_day_ago, end=now_rounded_up, freq='15T')
-
-    # Group by 'Com_Name' and 15-minute intervals, then count the occurrences
-    top_df_grouped = top_df.groupby(['Com_Name', pd.Grouper(key='Timestamp', freq='15Min')]).size().reset_index(name='Count')
-
-    # Create an empty DataFrame to hold the reindexed data
-    reindexed_data = pd.DataFrame()
-
-    # Go through each bird in the top birds and reindex
-    for bird in top_birds:
-        bird_df = top_df_grouped[top_df_grouped['Com_Name'] == bird]
-        bird_df.set_index('Timestamp', inplace=True)
-        bird_df = bird_df.reindex(all_intervals, method=None).rename_axis('Timestamp').reset_index()
-        bird_df['Com_Name'] = bird  # Add the bird name back in after reindexing
-        bird_df.fillna(0, inplace=True) # impute missing with 0s
-        reindexed_data = pd.concat([reindexed_data, bird_df], axis=0)
-
-    # Create the subplot grid - one plot for each bird
-    fig, axes = plt.subplots(nrows=len(top_birds), ncols=1, sharex=True, figsize=(8, 20))
-
-    # Plot the data
-    for ax, bird in zip(axes, top_birds):
-        # Filter the DataFrame for the current bird
-        bird_df = reindexed_data[reindexed_data['Com_Name'] == bird]
-
-        # Plot the sparkline for this bird
-        sns.lineplot(ax=ax, data=bird_df, x='Timestamp', y='Count', color='blue')
-
-        # Remove y-axis label and ticks for sparkline appearance
-        ax.yaxis.set_visible(False)
-
-        # set x-axis labels
-        ax.tick_params(axis='x', which='both', length=6)
-        ax.set_xticklabels([])  # Set empty labels for x ticks
-
-        # Create a wrapper object for wrapping text. `width` is the maximum length of the lines.
-        wrapper = textwrap.TextWrapper(width=10)
-        wrapped_label = wrapper.fill(text=bird)
-
-        # Set the bird name as the title for each subplot
-        ax.set_title(wrapped_label, loc='left', ha='right', x=0.0, y=0.25, fontsize=8)
-
-    # Remove x-axis labels and ticks except for the bottom one
-    for ax in axes[:-1]:
-        ax.set_xticklabels([])  # Set empty labels for x ticks
-
-    # Format the x-axis to show the time
-    plt.gcf().autofmt_xdate()  # Rotate date labels to prevent overlap
-    plt.gca().xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%H:%M'))
-
-    # Adjust layout so titles are visible and plots are close together
-    plt.tight_layout()
-
-    # Save combined plot
-    # savename = userDir + '/BirdSongs/Extracted/Charts/Sparklines-' + str(now.strftime("%Y-%m-%d")) + '.png'
-    savename = userDir + '/Desktop/Combo-' + str(now.strftime("%Y-%m-%d")) + '.png'
-    plt.savefig(savename)
-    plt.show()
-    plt.close()
+def load_fonts():
+    # Add every font at the specified location
+    font_dir = [FONT_DIR]
+    for font in font_manager.findSystemFonts(font_dir, fontext='ttf'):
+        font_manager.fontManager.addfont(font)
+    # Set font family globally
+    rcParams['font.family'] = get_font()['font.family']
 
 
 def main(daemon, sleep_m):
+    load_fonts()
+    last_run = None
     while True:
         now = datetime.now()
-        df = retrieve_data()
-        df = format_data(df)
-        top_n_today = get_top_n_today(df)
-        if not top_n_today.empty:
-            create_plots(top_n_today)
+        # now = datetime.strptime('2023-12-13T23:59:59', "%Y-%m-%dT%H:%M:%S")
+        # now = datetime.strptime('2024-01-02T23:59:59', "%Y-%m-%dT%H:%M:%S")
+        # now = datetime.strptime('2024-02-26T23:59:59', "%Y-%m-%dT%H:%M:%S")
+        # now = datetime.strptime('2024-04-03T23:59:59', "%Y-%m-%dT%H:%M:%S")
+        # now = datetime.strptime('2024-04-07T23:59:59', "%Y-%m-%dT%H:%M:%S")
+        if last_run and now.day != last_run.day:
+            print("getting yesterday's dataset")
+            yesterday = last_run.replace(hour=23, minute=59)
+            data, time = get_data(yesterday)
+        else:
+            data, time = get_data(now)
+        if not data.empty:
+            create_plot(data, time)
         else:
             print('empty dataset')
         if daemon:
+            last_run = now
             sleep(60 * sleep_m)
         else:
             break

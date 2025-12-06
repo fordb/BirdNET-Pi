@@ -20,19 +20,18 @@ I started building on [mcguirepr89's](https://github.com/mcguirepr89/BirdNET-Pi)
 
 Changes include:
 
- - Bookworm support
+ - Backup & Restore
+ - Web ui is much more responsive
+ - Daily charts now include all species, not just top/bottom 10
+ - Bump apprise version, so more notification type are possible
+ - Swipe events on Daily Charts (by @croisez)
+ - Support for 'Species range model V2.4 - V2'
+ - Bookworm and Trixie support
  - Experimental support for writing transient files to tmpfs
  - Rework analysis to consolidate analysis/server/extraction. Should make analysis more robust and slightly more efficient, especially on installations with a large number of recordings
- - Bump tflite_runtime to 2.11.0, it is faster
+ - Bump tflite_runtime to 2.17.1, it is faster
  - Rework daily_plot.py (chart_viewer) to run as a daemon to avoid the very expensive startup
- - Bump apprise version, so more notification type are possible
- - Fix: Setting Excluded/Custom species from the UI, that have a ' now works
- - Fix: Setting apprise notification body and apprise notification title that include 'special' characters like `"{}` now is possible. So you can send json now
- - Fix: add missing languages for new model
- - Fix: Daily Chart was not including new detections due to caching
- - Fix: changing advanced settings was not updating on a fresh install ed. CHANNELS, RECORDING_LENGTH, ... simplify
- - Fix: PrivacyThreshold now works as intended
- - Support for 'Species range model V2.4 - V2'
+ - Lots of fixes & cleanups
 
 !! note: see 'Migrating' on how to migrate from mcguirepr89
 
@@ -41,47 +40,6 @@ BirdNET-Pi is built on the [BirdNET framework](https://github.com/kahst/BirdNET-
 
 Check out birds from around the world
 - [BirdWeather](https://app.birdweather.com)<br>
-
-Currently listening in these countries . . . that I know of . . .
-- The United States
-- Germany
-- South Africa
-- France
-- Austria
-- Sweden
-- Scotland
-- Norway
-- England
-- Italy
-- Finland
-- Australia
-- Canada
-- Switzerland
-- Romania
-- Spain
-- New Zealand
-- Russia
-- Croatia
-- Belgium
-- Israel
-- Ireland
-- Denmark
-- Costa Rica
-- The Philippines
-- Hungary
-- South Sudan
-- Argentina
-- Brazil
-- Thailand
-- Colombia
-- Estonia
-- Tasmania
-- Luxembourgh
-- Crete
-- Rwanda
-- Oman
-- Belarus
-- Czech Republic
 
 ## Features
 * **24/7 recording and automatic identification** of bird songs, chirps, and peeps using BirdNET machine learning
@@ -97,16 +55,16 @@ Currently listening in these countries . . . that I know of . . .
 * SQLite3 Database
 * [Adminer](https://www.adminer.org/) database maintenance
 * [phpSysInfo](https://github.com/phpsysinfo/phpsysinfo)
-* [Apprise Notifications](https://github.com/caronc/apprise) supporting 70+ notification platforms
+* [Apprise Notifications](https://github.com/caronc/apprise) supporting 90+ notification platforms
 * Localization supported
 
 ## Requirements
 * A Raspberry Pi 5, Raspberry 4B, Raspberry Pi 400, Raspberry Pi 3B+, or Raspberry Pi 0W2 (The 3B+ and 0W2 must run on RaspiOS-ARM64-**Lite**)
-* An SD Card with the **_64-bit version of RaspiOS_** installed (please use Bookworm) -- Lite is recommended, but the installation works on RaspiOS-ARM64-Full as well. Downloads available within the [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
+* An SD Card with the **_64-bit version of RaspiOS_** installed (please use Trixie) -- Lite is recommended, but the installation works on RaspiOS-ARM64-Full as well. Downloads available within the [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
 * A USB Microphone or Sound Card
 
 ## Installation
-[A comprehensive installation guide is available here](https://github.com/mcguirepr89/BirdNET-Pi/wiki/Installation-Guide).
+[A comprehensive installation guide is available here](https://github.com/mcguirepr89/BirdNET-Pi/wiki/Installation-Guide). This guide is slightly out-dated: make sure to pick Bookworm, also the curl command is still pointing to mcguirepr89's repo.
 
 Please note that installing BirdNET-Pi on top of other servers is not supported. If this is something that you require, please open a discussion for your idea and inquire about how to contribute to development.
 
@@ -139,7 +97,34 @@ Please take a look at the [wiki](https://github.com/mcguirepr89/BirdNET-Pi/wiki)
 
 ## Updating 
 
-Use the web interface and go to "Tools" > "System Controls" > "Update." If you encounter any issues with that, or suspect that the update did not work for some reason, please save its output and post it in an issue where we can help.
+Use the web interface and go to "Tools" > "System Controls" > "Update". If you encounter any issues with that, or suspect that the update did not work for some reason, please save its output and post it in an issue where we can help.
+
+## Backup and Restore
+Use the web interface and go to "Tools" > "System Controls" > "Backup" or "Restore". Backup/Restore is primary meant for migrating your data for one system to another. Since the time required to create or restore a backup depends on the size of the data set and the speed of the storage, this could take quite a while.
+
+Alternatively, the backup script can be used directly. These examples assume the backup medium is mounted on `/mnt`
+
+To backup:
+```commandline
+./scripts/backup_data.sh -a backup -f /mnt/birds/backup-2024-07-09.tar
+```
+To restore:
+```commandline
+./scripts/backup_data.sh -a restore -f /mnt/birds/backup-2024-07-09.tar
+```
+
+## x86_64 support
+x86_64 support is mainly there for developers or otherwise more Linux savvy people.
+That being said, some pointers:
+- Use Debian 12 or 13
+- The user needs passwordless sudo
+
+For Proxmox, a user has reported adding this in their `cpu-models.conf`, in order for the custom TFLite build to work.
+```
+cpu-model: BirdNet
+    flags +sse4.1
+    reported-model host
+```
 
 ## Uninstallation
 ```
@@ -165,55 +150,36 @@ PLEASE search the repo for your issue before creating a new one. This repo has n
 Please join a Discussion!! and please join [BirdWeather!!](https://app.birdweather.com)
 I hope that if you find BirdNET-Pi has been worth your time, you will share your setup, results, customizations, etc. [HERE](https://github.com/mcguirepr89/BirdNET-Pi/discussions/69) and will consider [making your installation public](https://github.com/mcguirepr89/BirdNET-Pi/wiki/Sharing-Your-BirdNET-Pi).
 
+## Homeassistant addon
+
+BirdNET-Pi can also be run as a [Homeassistant](https://www.home-assistant.io/) addon through docker.
+For more information : https://github.com/alexbelgium/hassio-addons/blob/master/birdnet-pi/README.md
+
+## Docker
+
+BirdNET-Pi can also be run as as a docker container.
+For more information : https://github.com/alexbelgium/hassio-addons/blob/master/birdnet-pi/README_standalone.md
+
 ## Cool Links
 
 - [Marie Lelouche's <i>Out of Spaces</i>](https://www.lestanneries.fr/exposition/marie-lelouche-out-of-spaces/) using BirdNET-Pi in post-sculpture VR! [Press Kit](https://github.com/mcguirepr89/BirdNET-Pi-assets/blob/main/dp_out_of_spaces_marie_lelouche_digital_05_01_22.pdf)
 - [Research on noded BirdNET-Pi networks for farming](https://github.com/mcguirepr89/BirdNET-Pi-assets/blob/main/G23_Report_ModelBasedSysEngineering_FarmMarkBirdDetector_V1__Copy_.pdf)
 - [PixCams Build Guide](https://pixcams.com/building-a-birdnet-pi-real-time-acoustic-bird-id-station/)
-- <ins>[Core-Electronics](https://core-electronics.com.au/projects/bird-calls-raspberry-pi)</ins> Build Article
+- [Core-Electronics](https://core-electronics.com.au/projects/bird-calls-raspberry-pi) Build Article
 - [RaspberryPi.com Blog Post](https://www.raspberrypi.com/news/classify-birds-acoustically-with-birdnet-pi/)
 - [MagPi Issue 119 Showcase Article](https://magpi.raspberrypi.com/issues/119/pdf)
 
 
 ### Internationalization:
-The bird names are in English by default, but other localized versions are available thanks to the wonderful efforts of [@patlevin](https://github.com/patlevin). Use the web interface's "Tools" > "Settings" and select your "Database Language" to have the detections in your language.
+The bird names are in English by default, but other localized versions are available thanks to the wonderful efforts of [@patlevin](https://github.com/patlevin) and Wikipedia. Use the web interface's "Tools" > "Settings" and select your "Database Language" to have the detections in your language.
 
-Current database languages include the list below:
-| Language | Missing Species out of 6,362 | Missing labels (%) |
-| -------- | ------- | ------ |
-| Afrikaans | 5774 | 90.76% |
-| Catalan | 544 | 8.55% |
-| Chinese | 264 | 4.15% |
-| Croatian | 370 | 5.82% |
-| Czech | 683 | 10.74% |
-| Danish | 460 | 7.23% |
-| Dutch | 264 | 4.15% |
-| Estonian | 3171 | 49.84% |
-| Finnish | 518 | 8.14% |
-| French | 264 | 4.15% |
-| German | 264 | 4.15% |
-| Hungarian | 2688 | 42.25% |
-| Icelandic | 5588 | 87.83% |
-| Indonesian | 5550 | 87.24% |
-| Italian | 524 | 8.24% |
-| Japanese | 640 | 10.06% |
-| Latvian | 4821 | 75.78% |
-| Lithuanian | 597 | 9.38% |
-| Norwegian | 325 | 5.11% |
-| Polish | 265 | 4.17% |
-| Portuguese | 2742 | 43.10% |
-| Russian | 808 | 12.70% |
-| Slovak | 264 | 4.15% |
-| Slovenian | 5532 | 86.95% |
-| Spanish | 348 | 5.47% |
-| Swedish | 264 | 4.15% |
-| Thai | 5580 | 87.71% |
-| Ukrainian | 646 | 10.15% |
+[Internationalization](docs/translations.md)
+
 
 ## Screenshots
-![chrome_olUUgVo1Ka](https://user-images.githubusercontent.com/103586016/219236461-c717e88b-134f-4916-a691-eb7c055c55bf.png)
-![chrome_HNMJKSPwV0](https://user-images.githubusercontent.com/103586016/217896322-aee3ecc4-e40e-40df-ade1-79f05ded21f2.png)
+![Overview](docs/overview.png)
+![Spectrogram](docs/spectrogram.png)
 
 
 ## :thinking:
-Are you a lucky ducky with an extra Raspberry Pi 4B lying around? [Here's an idea!](https://foldingathome.org/alternative-downloads)
+Are you a lucky ducky with a spare Raspberry Pi? [Try Folding@home!](https://foldingathome.org/)
