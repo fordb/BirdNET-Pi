@@ -21,7 +21,7 @@ if(isset($_GET['deletefile'])) {
     die();
   }
   $db_writable = new SQLite3('./scripts/birds.db', SQLITE3_OPEN_READWRITE);
-  $db->busyTimeout(1000);
+  $db_writable->busyTimeout(1000);
   $statement1 = $db_writable->prepare('DELETE FROM detections WHERE File_Name = :file_name LIMIT 1');
   ensure_db_ok($statement1);
   $statement1->bindValue(':file_name', explode("/", $_GET['deletefile'])[2]);

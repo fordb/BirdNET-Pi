@@ -184,7 +184,7 @@ http:// ${BIRDNETPI_URL} {
     birdnet ${HASHWORD}
   }
   reverse_proxy /stream localhost:8000
-  php_fastcgi unix//run/php/php-fpm.sock
+  php_fastcgi unix/run/php/php-fpm.sock
   reverse_proxy /log* localhost:8080
   reverse_proxy /stats* localhost:8501
   reverse_proxy /terminal* localhost:8888
@@ -202,7 +202,7 @@ http:// ${BIRDNETPI_URL} {
     file_server browse
   }
   reverse_proxy /stream localhost:8000
-  php_fastcgi unix//run/php/php-fpm.sock
+  php_fastcgi unix/run/php/php-fpm.sock
   reverse_proxy /log* localhost:8080
   reverse_proxy /stats* localhost:8501
   reverse_proxy /terminal* localhost:8888
