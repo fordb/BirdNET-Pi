@@ -12,7 +12,6 @@ from tzlocal import get_localzone
 _settings = None
 
 DB_PATH = os.path.expanduser('~/BirdNET-Pi/scripts/birds.db')
-DB_PATH = "/Users/ford/Desktop/backup/birds.db"
 THISRUN = os.path.expanduser('~/BirdNET-Pi/scripts/thisrun.txt')
 ANALYZING_NOW = os.path.expanduser('~/BirdSongs/StreamData/analyzing_now.txt')
 
