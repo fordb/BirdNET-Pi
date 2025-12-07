@@ -149,15 +149,15 @@ if(isset($_GET['view'])){
     ensure_authenticated();
     include('scripts/service_controls.php');
   }
-  if($_GET['view'] == "Spectrogram"){include('spectrogram.php');}
+  if($_GET['view'] == "Spectrogram"){include('scripts/spectrogram.php');}
   if($_GET['view'] == "View Log"){echo "<body style=\"scroll:no;overflow-x:hidden;\"><iframe style=\"width:calc( 100% + 1em);\" src=\"log\"></iframe></body>";}
-  if($_GET['view'] == "Overview"){include('overview.php');}
-  if($_GET['view'] == "Todays Detections"){include('todays_detections.php');}
-  if($_GET['view'] == "Kiosk"){$kiosk = true;include('todays_detections.php');}
-  if($_GET['view'] == "Species Stats"){include('stats.php');}
-  if($_GET['view'] == "Weekly Report"){include('weekly_report.php');}
+  if($_GET['view'] == "Overview"){include('scripts/overview.php');}
+  if($_GET['view'] == "Todays Detections"){include('scripts/todays_detections.php');}
+  if($_GET['view'] == "Kiosk"){$kiosk = true;include('scripts/todays_detections.php');}
+  if($_GET['view'] == "Species Stats"){include('scripts/stats.php');}
+  if($_GET['view'] == "Weekly Report"){include('scripts/weekly_report.php');}
   if($_GET['view'] == "Streamlit"){echo "<iframe src=\"stats\"></iframe>";}
-  if($_GET['view'] == "Daily Charts"){include('history.php');}
+  if($_GET['view'] == "Daily Charts"){include('scripts/history.php');}
   if($_GET['view'] == "Tools"){
     ensure_authenticated();
     $url = $_SERVER['SERVER_NAME']."/scripts/adminer.php";
@@ -176,7 +176,7 @@ if(isset($_GET['view'])){
       </form>
       </div>";
   }
-  if($_GET['view'] == "Recordings"){include('play.php');}
+  if($_GET['view'] == "Recordings"){include('scripts/play.php');}
   if($_GET['view'] == "Settings"){include('scripts/config.php');} 
   if($_GET['view'] == "Advanced"){include('scripts/advanced.php');}
   if($_GET['view'] == "Included"){
@@ -340,7 +340,7 @@ if(isset($_GET['view'])){
       }
     }
   ob_end_flush();
-} else {include('overview.php');}
+} else {include('scripts/overview.php');}
 ?>
 <script>
 function myFunction() {
